@@ -68,16 +68,18 @@ pub fn main() {
                         }
                         _ => {}
                     }
-                    if let Some(event) = iced_winit::conversion::window_event(
-                        &event,
-                        window.scale_factor(),
-                        modifiers,
-                    ) {
-                        state.queue_event(event);
-                    }
+                }
+                if let Some(event) = iced_winit::conversion::window_event(
+                    &event,
+                    window.scale_factor(),
+                    modifiers,
+                ) {
+                    state.queue_event(event);
                 }
             }
             Event::MainEventsCleared => {
+                // window.request_redraw();
+                // next code works slowly for some reason
                 if !state.is_queue_empty() {
                     let _ = state.update(
                         viewport.logical_size(),
