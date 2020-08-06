@@ -75,11 +75,12 @@ pub fn main() {
                     modifiers,
                 ) {
                     state.queue_event(event);
+                    // if !scene.mouse_input(&event) {
+                    //     state.queue_event(event);
+                    // }
                 }
             }
             Event::MainEventsCleared => {
-                // window.request_redraw();
-                // next code works slowly for some reason
                 if !state.is_queue_empty() {
                     let _ = state.update(
                         viewport.logical_size(),
@@ -91,8 +92,8 @@ pub fn main() {
                         &mut renderer,
                         &mut debug,
                     );
-                    window.request_redraw();
                 }
+                window.request_redraw();
             }
             Event::RedrawRequested(_) => {
                 scene.update();

@@ -1,6 +1,7 @@
 use iced_winit::winit::{
     event::*,
 };
+use winit::dpi::PhysicalPosition;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -36,6 +37,10 @@ pub struct CameraController {
     is_backward_pressed: bool,
     is_left_pressed: bool,
     is_right_pressed: bool,
+    rotate_horizontal: f32,
+    rotate_vertical: f32,
+    last_mouse_pos: PhysicalPosition<f64>,
+    mouse_pressed: bool,
 }
 
 impl CameraController {
@@ -48,6 +53,10 @@ impl CameraController {
             is_backward_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
+            rotate_horizontal: 0.0,
+            rotate_vertical: 0.0,
+            last_mouse_pos: (0.0, 0.0).into(),
+            mouse_pressed: false,
         }
     }
 
@@ -91,11 +100,36 @@ impl CameraController {
                     _ => false,
                 }
             }
+            WindowEvent::MouseInput {
+                button: MouseButton::Right,
+                state,
+                ..
+            } => {
+                self.mouse_pressed = *state == ElementState::Pressed;
+                false
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if self.mouse_pressed {
+                    self.rotate_horizontal = if position.x - self.last_mouse_pos.x > 0.0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    self.rotate_vertical = if position.y - self.last_mouse_pos.y > 0.0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    self.last_mouse_pos = position.clone();
+                    return true;
+                }
+                false
+            }
             _ => false,
         }
     }
 
-    pub fn update_camera(&self, camera: &mut Camera) {
+    pub fn update_camera(&mut self, camera: &mut Camera) {
         use cgmath::InnerSpace;
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
@@ -126,6 +160,13 @@ impl CameraController {
         if self.is_left_pressed {
             camera.eye -= right * self.speed;
             camera.target -= right * self.speed;
+        }
+
+        if self.mouse_pressed {
+            camera.target.x += self.rotate_horizontal * 0.1;
+            camera.target.y += self.rotate_vertical * 0.1;
+            self.rotate_vertical = 0.0;
+            self.rotate_horizontal = 0.0;
         }
     }
 }
