@@ -145,7 +145,7 @@ checksum = "7aa2097be53a00de9e8fc349fea6d76221f398f5c4fa550d420669906962d160"
 dependencies = [
  "mio",
  "mio-extras",
- "nix",
+ "nix 0.14.1",
 ]
 
 [[package]]
@@ -173,10 +173,12 @@ dependencies = [
 
 [[package]]
 name = "clipboard-win"
-version = "2.2.0"
+version = "4.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3a093d6fed558e5fe24c3dfc85a68bb68f1c824f440d3ba5aca189e2998786b"
+checksum = "3fc29d3daea60dabda924ff1d6f9dbf9f6563e9edb851cbc8cf9bb264ba29f33"
 dependencies = [
+ "error-code",
+ "str-buf",
  "winapi 0.3.9",
 ]
 
@@ -193,9 +195,9 @@ dependencies = [
 
 [[package]]
 name = "clipboard_wayland"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88fa1b449e43a33bc4155e712e7239d67269e8fb9df13c135cdfa8a710c17422"
+checksum = "926d872adca0fc88173f8b7532c651e29ce67dc97323f4546c1c8af6610937fb"
 dependencies = [
  "smithay-clipboard",
 ]
@@ -505,6 +507,16 @@ name = "either"
 version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb1f6b1ce1c140482ea30ddd3335fc0024ac7ee112895426e0a629a6c20adfe3"
+
+[[package]]
+name = "error-code"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6744173039038c64bbf51b45a20d83afb758ed059c32d26594da04c13428f47f"
+dependencies = [
+ "libc",
+ "str-buf",
+]
 
 [[package]]
 name = "euclid"
@@ -1307,6 +1319,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50e4785f2c3b7589a0d0c1dd60285e1188adac4006e8abd6dd578e1567027363"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if",
+ "libc",
+ "void",
+]
+
+[[package]]
+name = "nom"
+version = "5.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffb4262d26ed83a1c0a33a38fe2bb15797329c85770da05e6b828ddb782627af"
+dependencies = [
+ "memchr",
+ "version_check",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1859,6 +1894,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "scoped-tls"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea6a9290e3c9cf0f18145ef7ffa62d68ee0bf5fcd651017e586dc7fd5da448c2"
+
+[[package]]
 name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1959,19 +2000,37 @@ dependencies = [
  "dlib",
  "lazy_static",
  "memmap",
- "nix",
- "wayland-client",
- "wayland-protocols",
+ "nix 0.14.1",
+ "wayland-client 0.23.6",
+ "wayland-protocols 0.23.6",
+]
+
+[[package]]
+name = "smithay-client-toolkit"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abfcf0ec41b4e51b8780b59d026f3ea98d6c06838e8c5046dcbd06fd9bfa529e"
+dependencies = [
+ "bitflags",
+ "byteorder",
+ "dlib",
+ "lazy_static",
+ "log",
+ "memmap",
+ "nix 0.17.0",
+ "wayland-client 0.27.0",
+ "wayland-cursor",
+ "wayland-protocols 0.27.0",
 ]
 
 [[package]]
 name = "smithay-clipboard"
-version = "0.3.7"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a59486e68b5596f664deedf01c46297f4af60379adae20175357a814d40f69e"
+checksum = "ba6209a44384ee0452c7f3f150556bdfa0fab300f09231971d88d525c8ae18da"
 dependencies = [
- "nix",
- "smithay-client-toolkit",
+ "smithay-client-toolkit 0.10.0",
+ "wayland-client 0.27.0",
 ]
 
 [[package]]
@@ -2002,6 +2061,12 @@ checksum = "fd0a4829a5c591dc24a944a736d6b1e4053e51339a79fd5d4702c4c999a9c45e"
 dependencies = [
  "lock_api",
 ]
+
+[[package]]
+name = "str-buf"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cec4d70d0ed9214ae8d642a13bafe4fdfe45a4c611d27a9fb4d4c1a3b02a12e3"
 
 [[package]]
 name = "svg_fmt"
@@ -2116,6 +2181,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 
 [[package]]
+name = "version_check"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5a972e5669d67ba988ce3dc826706fb0a8b01471c088cb0b6110b805cc36aed"
+
+[[package]]
 name = "void"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2215,10 +2286,26 @@ dependencies = [
  "downcast-rs",
  "libc",
  "mio",
- "nix",
- "wayland-commons",
- "wayland-scanner",
- "wayland-sys",
+ "nix 0.14.1",
+ "wayland-commons 0.23.6",
+ "wayland-scanner 0.23.6",
+ "wayland-sys 0.23.6",
+]
+
+[[package]]
+name = "wayland-client"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab702fefbcd6d6f67fb5816e3a89a3b5a42a94290abbc015311c9a30d1068ae4"
+dependencies = [
+ "bitflags",
+ "downcast-rs",
+ "libc",
+ "nix 0.17.0",
+ "scoped-tls",
+ "wayland-commons 0.27.0",
+ "wayland-scanner 0.27.0",
+ "wayland-sys 0.27.0",
 ]
 
 [[package]]
@@ -2227,8 +2314,31 @@ version = "0.23.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb66b0d1a27c39bbce712b6372131c6e25149f03ffb0cd017cf8f7de8d66dbdb"
 dependencies = [
- "nix",
- "wayland-sys",
+ "nix 0.14.1",
+ "wayland-sys 0.23.6",
+]
+
+[[package]]
+name = "wayland-commons"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e972e9336ad5a9dd861b4e21ff35ad71d3e5c6b4803d65c39913612f851b95f1"
+dependencies = [
+ "nix 0.17.0",
+ "once_cell",
+ "smallvec",
+ "wayland-sys 0.27.0",
+]
+
+[[package]]
+name = "wayland-cursor"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "539f346e1a3f706f38c8ccbe1196001e2fb1c9b3e6b605c27d665db2f5b60d41"
+dependencies = [
+ "nix 0.17.0",
+ "wayland-client 0.27.0",
+ "xcursor",
 ]
 
 [[package]]
@@ -2238,9 +2348,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6cc286643656742777d55dc8e70d144fa4699e426ca8e9d4ef454f4bf15ffcf9"
 dependencies = [
  "bitflags",
- "wayland-client",
- "wayland-commons",
- "wayland-scanner",
+ "wayland-client 0.23.6",
+ "wayland-commons 0.23.6",
+ "wayland-scanner 0.23.6",
+]
+
+[[package]]
+name = "wayland-protocols"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3d6fc54b17b98b5083bc21ae3a30e6d75cb4b01647360e4c3a04648bcf8781d"
+dependencies = [
+ "bitflags",
+ "wayland-client 0.27.0",
+ "wayland-commons 0.27.0",
+ "wayland-scanner 0.27.0",
 ]
 
 [[package]]
@@ -2255,6 +2377,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wayland-scanner"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "030f56009d932bd9400bb472764fea8109be1b0fc482d9cd75496c943ac30328"
+dependencies = [
+ "proc-macro2 1.0.19",
+ "quote 1.0.7",
+ "xml-rs",
+]
+
+[[package]]
 name = "wayland-sys"
 version = "0.23.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2262,6 +2395,17 @@ checksum = "d94e89a86e6d6d7c7c9b19ebf48a03afaac4af6bc22ae570e9a24124b75358f4"
 dependencies = [
  "dlib",
  "lazy_static",
+]
+
+[[package]]
+name = "wayland-sys"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bdeffbbb474477dfa2acb45ac7479e5fe8f741c64ab032c5d11b94d07edc269"
+dependencies = [
+ "dlib",
+ "lazy_static",
+ "pkg-config",
 ]
 
 [[package]]
@@ -2398,9 +2542,9 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "window_clipboard"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edcfde4a2b330a44ce91aaa3a1634d492b7ac32ebdde8316f141009f953fa152"
+checksum = "b849e24b344ea3535bcda7320b8b7f3560bd2c3692de73153d3c64acc84203e5"
 dependencies = [
  "clipboard-win",
  "clipboard_macos",
@@ -2434,8 +2578,8 @@ dependencies = [
  "parking_lot",
  "percent-encoding",
  "raw-window-handle",
- "smithay-client-toolkit",
- "wayland-client",
+ "smithay-client-toolkit 0.6.6",
+ "wayland-client 0.23.6",
  "winapi 0.3.9",
  "x11-dl",
 ]
@@ -2489,6 +2633,15 @@ checksum = "62056f63138b39116f82a540c983cc11f1c90cd70b3d492a70c25eaa50bd22a6"
 dependencies = [
  "libc",
  "log",
+]
+
+[[package]]
+name = "xcursor"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3a481cfdefd35e1c50073ae33a8000d695c98039544659f5dc5dd71311b0d01"
+dependencies = [
+ "nom",
 ]
 
 [[package]]

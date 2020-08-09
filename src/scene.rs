@@ -2,10 +2,11 @@ use iced_wgpu::{wgpu};
 use iced_winit::{futures, winit, Color};
 use cgmath;
 use cgmath::prelude::*;
-use winit::dpi::PhysicalSize;
-use winit::event::WindowEvent;
-use crate::camera_controller::{Camera, CameraController};
+use winit::dpi::{PhysicalSize, PhysicalPosition};
+use winit::event::{WindowEvent, KeyboardInput, MouseButton, ElementState};
 use iced_wgpu::wgpu::PipelineLayout;
+use crate::camera::{Camera, Projection, CameraController};
+use cgmath::{Matrix4, Point3};
 
 const VERTICES: [Vertex; 5] = [
     Vertex {
@@ -34,6 +35,7 @@ const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 #[repr(C)]
 #[derive(Copy, Clone)]
 struct Uniforms {
+    view_position: cgmath::Vector4<f32>,
     view_proj: cgmath::Matrix4<f32>,
 }
 
@@ -43,12 +45,14 @@ unsafe impl bytemuck::Zeroable for Uniforms {}
 impl Uniforms {
     fn new() -> Self {
         Self {
-            view_proj: cgmath::Matrix4::identity(),
+            view_position: Zero::zero(),
+            view_proj: Matrix4::identity(),
         }
     }
 
-    fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_projection_matrix();
+    fn update_view_proj(&mut self, camera: &Camera, projection: &Projection) {
+        self.view_position = camera.position.to_homogeneous();
+        self.view_proj = projection.calc_matrix() * camera.calc_matrix()
     }
 }
 
@@ -109,6 +113,7 @@ impl Vertex {
 pub struct Scene {
     pub format: wgpu::TextureFormat,
     pub surface: wgpu::Surface,
+    sc_desc: wgpu::SwapChainDescriptor,
     pub swap_chain: wgpu::SwapChain,
     pipeline: wgpu::RenderPipeline,
     pub queue: wgpu::Queue,
@@ -119,7 +124,10 @@ pub struct Scene {
     uniform_bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
     camera: Camera,
+    projection: Projection,
     camera_controller: CameraController,
+    last_mouse_pos: PhysicalPosition<f64>,
+    mouse_pressed: bool,
 }
 
 impl Scene {
@@ -147,7 +155,7 @@ impl Scene {
                 .await
         });
         let size = window.inner_size();
-        let sc_desc = &wgpu::SwapChainDescriptor {
+        let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
             format,
             width: size.width,
@@ -156,23 +164,17 @@ impl Scene {
         };
         let swap_chain = device.create_swap_chain(
             &surface,
-            sc_desc,
+            &sc_desc,
         );
         let vertex_buffer = device
             .create_buffer_with_data(bytemuck::cast_slice(&VERTICES), wgpu::BufferUsage::VERTEX);
         let index_buffer =
             device.create_buffer_with_data(bytemuck::cast_slice(INDICES), wgpu::BufferUsage::INDEX);
-        let camera = Camera {
-            eye: (0.0, 0.0, 2.0).into(),
-            target: (0.0, 0.0, 0.0).into(),
-            up: cgmath::Vector3::unit_y(),
-            aspect: sc_desc.width as f32 / sc_desc.height as f32,
-            fovy: 70.0,
-            znear: 0.1,
-            zfar: 100.0,
-        };
+        let camera = Camera::new(Point3::new(0.0, 0.0, 2.0), cgmath::Deg(0.0), cgmath::Deg(0.0));
+        let projection = Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(70.0), 0.1, 100.0);
+
         let mut uniforms = Uniforms::new();
-        uniforms.update_view_proj(&camera);
+        uniforms.update_view_proj(&camera, &projection);
         let uniform_buffer = device.create_buffer_with_data(
             bytemuck::cast_slice(&[uniforms]),
             wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
@@ -209,6 +211,7 @@ impl Scene {
             format,
             surface,
             swap_chain,
+            sc_desc,
             pipeline: build_pipeline(&device, &render_pipeline_layout),
             queue,
             device,
@@ -218,7 +221,10 @@ impl Scene {
             uniform_bind_group,
             uniform_buffer,
             camera,
-            camera_controller: CameraController::new(0.2),
+            projection,
+            camera_controller: CameraController::new(0.1, 0.1),
+            last_mouse_pos: (0.0, 0.0).into(),
+            mouse_pressed: false,
         }
     }
 
@@ -256,26 +262,59 @@ impl Scene {
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }
 
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.swap_chain = self.device.create_swap_chain(
-            &self.surface,
-            &wgpu::SwapChainDescriptor {
-                usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-                format: self.format,
-                width: size.width,
-                height: size.height,
-                present_mode: wgpu::PresentMode::Mailbox,
-            },
-        );
+    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+        self.projection.resize(new_size.width, new_size.height);
+        self.sc_desc.width = new_size.width;
+        self.sc_desc.height = new_size.height;
+        self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
-        self.camera_controller.process_events(event)
+        match event {
+            WindowEvent::KeyboardInput {
+                input: KeyboardInput {
+                    virtual_keycode: Some(key),
+                    state,
+                    ..
+                },
+                ..
+            } => self.camera_controller.process_keyboard(*key, *state),
+            WindowEvent::MouseWheel {
+                delta,
+                ..
+            } => {
+                self.camera_controller.process_scroll(delta);
+                true
+            }
+            WindowEvent::MouseInput {
+                button: MouseButton::Right,
+                state,
+                ..
+            } => {
+                self.mouse_pressed = *state == ElementState::Pressed;
+                true
+            }
+            WindowEvent::CursorMoved {
+                position,
+                ..
+            } => {
+                let mouse_dx = position.x - self.last_mouse_pos.x;
+                let mouse_dy = position.y - self.last_mouse_pos.y;
+                self.last_mouse_pos = *position;
+                if self.mouse_pressed {
+                    self.camera_controller.process_mouse(mouse_dx, mouse_dy);
+                }
+                // todo CursorMoved are used in both scene and main
+                false
+                // true
+            }
+            _ => false,
+        }
     }
 
-    pub fn update(&mut self) {
-        self.camera_controller.update_camera(&mut self.camera);
-        self.uniforms.update_view_proj(&self.camera);
+    pub fn update(&mut self, dt: std::time::Duration) {
+        self.camera_controller.update_camera(&mut self.camera, dt);
+        self.uniforms.update_view_proj(&self.camera, &self.projection);
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("update encoder"),
         });

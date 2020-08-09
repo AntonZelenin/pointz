@@ -1,6 +1,6 @@
 mod controls;
 mod scene;
-mod camera_controller;
+mod camera;
 
 use controls::Controls;
 use scene::Scene;
@@ -44,6 +44,7 @@ pub fn main() {
         &mut renderer,
         &mut debug,
     );
+    let mut last_render_time = std::time::Instant::now();
 
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -75,9 +76,6 @@ pub fn main() {
                     modifiers,
                 ) {
                     state.queue_event(event);
-                    // if !scene.mouse_input(&event) {
-                    //     state.queue_event(event);
-                    // }
                 }
             }
             Event::MainEventsCleared => {
@@ -96,7 +94,10 @@ pub fn main() {
                 window.request_redraw();
             }
             Event::RedrawRequested(_) => {
-                scene.update();
+                let now = std::time::Instant::now();
+                let dt = now - last_render_time;
+                last_render_time = now;
+                scene.update(dt);
                 if resized {
                     scene.resize(window.inner_size());
                     resized = false;
