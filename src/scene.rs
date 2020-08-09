@@ -170,8 +170,8 @@ impl Scene {
             .create_buffer_with_data(bytemuck::cast_slice(&VERTICES), wgpu::BufferUsage::VERTEX);
         let index_buffer =
             device.create_buffer_with_data(bytemuck::cast_slice(INDICES), wgpu::BufferUsage::INDEX);
-        let camera = Camera::new(Point3::new(0.0, 0.0, 2.0), cgmath::Deg(0.0), cgmath::Deg(0.0));
-        let projection = Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(70.0), 0.1, 100.0);
+        let camera = Camera::new(Point3::new(0.0, 0.0, 2.0), cgmath::Deg(-90.0), cgmath::Deg(0.0));
+        let projection = Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
 
         let mut uniforms = Uniforms::new();
         uniforms.update_view_proj(&camera, &projection);
@@ -222,7 +222,7 @@ impl Scene {
             uniform_buffer,
             camera,
             projection,
-            camera_controller: CameraController::new(0.1, 0.1),
+            camera_controller: CameraController::new(4.0, 0.4),
             last_mouse_pos: (0.0, 0.0).into(),
             mouse_pressed: false,
         }
