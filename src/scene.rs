@@ -1,36 +1,34 @@
-use iced_wgpu::{wgpu};
-use iced_winit::{futures, winit, Color};
+use crate::camera::{Camera, CameraController, Projection};
+use crate::texture;
 use cgmath;
 use cgmath::prelude::*;
-use winit::dpi::{PhysicalSize, PhysicalPosition};
-use winit::event::{WindowEvent, KeyboardInput, MouseButton, ElementState};
-use iced_wgpu::wgpu::PipelineLayout;
-use crate::camera::{Camera, Projection, CameraController};
 use cgmath::{Matrix4, Point3};
+use iced_wgpu::wgpu;
+use iced_wgpu::wgpu::PipelineLayout;
+use iced_winit::{futures, winit, Color};
+use winit::dpi::{PhysicalPosition, PhysicalSize};
+use winit::event::{ElementState, KeyboardInput, MouseButton, WindowEvent};
 
-const VERTICES: [Vertex; 5] = [
+const VERTICES: [Vertex; 4] = [
     Vertex {
-        position: [-0.0868241, 0.49240386, 0.0],
-        tex_coords: [0.4131759, 0.00759614],
+        position: [-2.5, 0.0, 0.0],
+        tex_coords: [0.4, 0.0],
     },
     Vertex {
-        position: [-0.49513406, 0.06958647, 0.0],
-        tex_coords: [0.0048659444, 0.43041354],
+        position: [2.5, 0.0, 0.0],
+        tex_coords: [0.8, 0.0],
     },
     Vertex {
-        position: [-0.21918549, -0.44939706, 0.0],
-        tex_coords: [0.28081453, 0.949397057],
+        position: [0.0, 2.5, -2.3],
+        tex_coords: [0.5, 0.8],
     },
     Vertex {
-        position: [0.35966998, -0.3473291, 0.0],
-        tex_coords: [0.85967, 0.84732911],
-    },
-    Vertex {
-        position: [0.44147372, 0.2347359, 0.0],
-        tex_coords: [0.9414737, 0.2652641],
+        position: [0.0, 0.0, -2.5],
+        tex_coords: [0.0, 0.0],
     },
 ];
-const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
+
+const INDICES: &[u16] = &[2, 1, 0, 0, 1, 3, 1, 2, 3];
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -103,7 +101,7 @@ impl Vertex {
                 wgpu::VertexAttributeDescriptor {
                     offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float3,
+                    format: wgpu::VertexFormat::Float2,
                 },
             ],
         }
@@ -118,6 +116,11 @@ pub struct Scene {
     pipeline: wgpu::RenderPipeline,
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
+
+    #[allow(dead_code)]
+    diffuse_texture: texture::Texture,
+    diffuse_bind_group: wgpu::BindGroup,
+
     pub index_buffer: wgpu::Buffer,
     pub vertex_buffer: wgpu::Buffer,
     uniforms: Uniforms,
@@ -142,8 +145,8 @@ impl Scene {
                 },
                 wgpu::BackendBit::PRIMARY,
             )
-                .await
-                .expect("Request adapter");
+            .await
+            .expect("Request adapter");
 
             adapter
                 .request_device(&wgpu::DeviceDescriptor {
@@ -162,16 +165,18 @@ impl Scene {
             height: size.height,
             present_mode: wgpu::PresentMode::Mailbox,
         };
-        let swap_chain = device.create_swap_chain(
-            &surface,
-            &sc_desc,
-        );
+        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
         let vertex_buffer = device
             .create_buffer_with_data(bytemuck::cast_slice(&VERTICES), wgpu::BufferUsage::VERTEX);
         let index_buffer =
             device.create_buffer_with_data(bytemuck::cast_slice(INDICES), wgpu::BufferUsage::INDEX);
-        let camera = Camera::new(Point3::new(0.0, 0.0, 2.0), cgmath::Deg(-90.0), cgmath::Deg(0.0));
-        let projection = Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
+        let camera = Camera::new(
+            Point3::new(0.0, 0.0, 2.0),
+            cgmath::Deg(-90.0),
+            cgmath::Deg(0.0),
+        );
+        let projection =
+            Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
 
         let mut uniforms = Uniforms::new();
         uniforms.update_view_proj(&camera, &projection);
@@ -181,32 +186,68 @@ impl Scene {
         );
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX,
-                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
-                    },
-                ],
+                bindings: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                }],
                 label: Some("uniform_bind_group_layout"),
             });
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &uniform_bind_group_layout,
+            bindings: &[wgpu::Binding {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer {
+                    buffer: &uniform_buffer,
+                    range: 0..std::mem::size_of_val(&uniforms) as wgpu::BufferAddress,
+                },
+            }],
+            label: Some("uniform_bind_group"),
+        });
+
+        let diffuse_bytes = include_bytes!("textures/pnggradHDrgba.png");
+        let (diffuse_texture, cmd_buffer) =
+            texture::Texture::from_bytes(&device, diffuse_bytes, "pnggradHDrgba.png").unwrap();
+        queue.submit(&[cmd_buffer]);
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                bindings: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::SampledTexture {
+                            multisampled: false,
+                            dimension: wgpu::TextureViewDimension::D2,
+                            component_type: wgpu::TextureComponentType::Uint,
+                        },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler { comparison: false },
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
             bindings: &[
                 wgpu::Binding {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buffer,
-                        range: 0..std::mem::size_of_val(&uniforms) as wgpu::BufferAddress,
-                    },
-                }
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
             ],
-            label: Some("uniform_bind_group"),
+            label: Some("diffuse_bind_group"),
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                bind_group_layouts: &[&uniform_bind_group_layout],
+                bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
             });
+
         Scene {
             format,
             surface,
@@ -215,6 +256,8 @@ impl Scene {
             pipeline: build_pipeline(&device, &render_pipeline_layout),
             queue,
             device,
+            diffuse_texture,
+            diffuse_bind_group,
             vertex_buffer,
             index_buffer,
             uniforms,
@@ -257,6 +300,7 @@ impl Scene {
     pub fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
         render_pass.set_vertex_buffer(0, &self.vertex_buffer, 0, 0);
         render_pass.set_index_buffer(&self.index_buffer, 0, 0);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
@@ -272,17 +316,15 @@ impl Scene {
     pub fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
-                input: KeyboardInput {
-                    virtual_keycode: Some(key),
-                    state,
-                    ..
-                },
+                input:
+                    KeyboardInput {
+                        virtual_keycode: Some(key),
+                        state,
+                        ..
+                    },
                 ..
             } => self.camera_controller.process_keyboard(*key, *state),
-            WindowEvent::MouseWheel {
-                delta,
-                ..
-            } => {
+            WindowEvent::MouseWheel { delta, .. } => {
                 self.camera_controller.process_scroll(delta);
                 true
             }
@@ -294,10 +336,7 @@ impl Scene {
                 self.mouse_pressed = *state == ElementState::Pressed;
                 true
             }
-            WindowEvent::CursorMoved {
-                position,
-                ..
-            } => {
+            WindowEvent::CursorMoved { position, .. } => {
                 let mouse_dx = position.x - self.last_mouse_pos.x;
                 let mouse_dy = position.y - self.last_mouse_pos.y;
                 self.last_mouse_pos = *position;
@@ -314,10 +353,13 @@ impl Scene {
 
     pub fn update(&mut self, dt: std::time::Duration) {
         self.camera_controller.update_camera(&mut self.camera, dt);
-        self.uniforms.update_view_proj(&self.camera, &self.projection);
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("update encoder"),
-        });
+        self.uniforms
+            .update_view_proj(&self.camera, &self.projection);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("update encoder"),
+            });
         let staging_buffer = self.device.create_buffer_with_data(
             bytemuck::cast_slice(&[self.uniforms]),
             wgpu::BufferUsage::COPY_SRC,
@@ -333,49 +375,49 @@ impl Scene {
     }
 }
 
-fn build_pipeline(device: &wgpu::Device, render_pipeline_layout: &PipelineLayout) -> wgpu::RenderPipeline {
+fn build_pipeline(
+    device: &wgpu::Device,
+    render_pipeline_layout: &PipelineLayout,
+) -> wgpu::RenderPipeline {
     let vs = include_bytes!("shader/my_vert.spv");
     let fs = include_bytes!("shader/my_frag.spv");
-    let vs_module = device.create_shader_module(
-        &wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap(),
-    );
-    let fs_module = device.create_shader_module(
-        &wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap(),
-    );
-    let pipeline =
-        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            layout: render_pipeline_layout,
-            vertex_stage: wgpu::ProgrammableStageDescriptor {
-                module: &vs_module,
-                entry_point: "main",
-            },
-            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-                module: &fs_module,
-                entry_point: "main",
-            }),
-            rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: wgpu::CullMode::None,
-                depth_bias: 0,
-                depth_bias_slope_scale: 0.0,
-                depth_bias_clamp: 0.0,
-            }),
-            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            color_states: &[wgpu::ColorStateDescriptor {
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                color_blend: wgpu::BlendDescriptor::REPLACE,
-                alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                write_mask: wgpu::ColorWrite::ALL,
-            }],
-            depth_stencil_state: None,
-            vertex_state: wgpu::VertexStateDescriptor {
-                index_format: wgpu::IndexFormat::Uint16,
-                vertex_buffers: &[Vertex::desc()],
-            },
-            sample_count: 1,
-            sample_mask: !0,
-            alpha_to_coverage_enabled: false,
-        });
+    let vs_module =
+        device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
+    let fs_module =
+        device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        layout: render_pipeline_layout,
+        vertex_stage: wgpu::ProgrammableStageDescriptor {
+            module: &vs_module,
+            entry_point: "main",
+        },
+        fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+            module: &fs_module,
+            entry_point: "main",
+        }),
+        rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: wgpu::CullMode::None,
+            depth_bias: 0,
+            depth_bias_slope_scale: 0.0,
+            depth_bias_clamp: 0.0,
+        }),
+        primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+        color_states: &[wgpu::ColorStateDescriptor {
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            color_blend: wgpu::BlendDescriptor::REPLACE,
+            alpha_blend: wgpu::BlendDescriptor::REPLACE,
+            write_mask: wgpu::ColorWrite::ALL,
+        }],
+        depth_stencil_state: None,
+        vertex_state: wgpu::VertexStateDescriptor {
+            index_format: wgpu::IndexFormat::Uint16,
+            vertex_buffers: &[Vertex::desc()],
+        },
+        sample_count: 1,
+        sample_mask: !0,
+        alpha_to_coverage_enabled: false,
+    });
 
     pipeline
 }

@@ -1,7 +1,6 @@
 use iced_wgpu::Renderer;
 use iced_winit::{
-    button, Align, Color, Column, Command, Element, Length, Program, Row,
-    Button, Text,
+    button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text,
 };
 
 pub struct Controls {
@@ -54,12 +53,10 @@ impl Program for Controls {
                     .width(Length::Fill)
                     .align_items(Align::End)
                     .push(
-                        Column::new()
-                            .padding(10)
-                            .spacing(10)
-                            .push(Button::new(&mut self.buttons[0], Text::new("Change background"))
-                                .on_press(Message::ChangeBackgroundColor)
-                            ),
+                        Column::new().padding(10).spacing(10).push(
+                            Button::new(&mut self.buttons[0], Text::new("Change background"))
+                                .on_press(Message::ChangeBackgroundColor),
+                        ),
                     ),
             )
             .into()
