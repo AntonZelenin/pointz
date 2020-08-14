@@ -3,7 +3,10 @@ mod controls;
 mod scene;
 mod texture;
 
-use controls::Controls;
+#[macro_use]
+extern crate log;
+
+use controls::GUI;
 use iced_wgpu::{wgpu, Backend, Renderer, Settings, Viewport};
 use iced_winit::{conversion, program, winit, Debug, Size};
 use scene::Scene;
@@ -17,8 +20,11 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
+use winit::event::DeviceEvent;
 
 pub fn main() {
+    env_logger::init();
+
     compile_my_shader(
         "src/shader/my.frag",
         "src/shader/my_frag.spv",
@@ -35,7 +41,7 @@ pub fn main() {
     let mut scene = Scene::new(&window);
     let mut resized = false;
     let mut modifiers = ModifiersState::default();
-    let controls = Controls::new();
+    let controls = GUI::new();
 
     let physical_size = window.inner_size();
     let mut viewport = Viewport::with_physical_size(
@@ -60,6 +66,7 @@ pub fn main() {
                 match event {
                     WindowEvent::CursorMoved { position, .. } => {
                         cursor_position = position;
+                        // warn!("Cursor position: x = {}, y = {}", cursor_position.x, cursor_position.y);
                     }
                     WindowEvent::ModifiersChanged(new_modifiers) => {
                         modifiers = new_modifiers;
@@ -125,6 +132,18 @@ pub fn main() {
             scene.queue.submit(&[encoder.finish()]);
             window.set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
         }
+        // Event::DeviceEvent { event, .. } => {
+        //     match event {
+        //         DeviceEvent::MouseMotion { delta } => {
+        //             cursor_position = PhysicalPosition::new(delta.0, delta.1);
+        //             // warn!("Cursor position: x = {}, y = {}", delta.0, delta.1);
+        //         },
+        //         // DeviceEvent::Motion { axis, value } => {
+        //         //     warn!("Axis: {}, value: {}", axis, value);
+        //         // }
+        //         _ => {},
+        //     }
+        // }
         _ => {}
     })
 }

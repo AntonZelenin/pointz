@@ -1,23 +1,27 @@
 use iced_wgpu::Renderer;
 use iced_winit::{
-    button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text,
+    button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text
 };
+use winit::dpi::PhysicalPosition;
 
-pub struct Controls {
+pub struct GUI {
     background_color: Color,
     buttons: [button::State; 1],
+    pub cursor_position: PhysicalPosition<f64>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     ChangeBackgroundColor,
+    CursorMoved(PhysicalPosition<f64>),
 }
 
-impl Controls {
-    pub fn new() -> Controls {
-        Controls {
+impl GUI {
+    pub fn new() -> GUI {
+        GUI {
             background_color: Color::BLACK,
             buttons: Default::default(),
+            cursor_position: PhysicalPosition::new(0.0, 0.0),
         }
     }
 
@@ -26,7 +30,7 @@ impl Controls {
     }
 }
 
-impl Program for Controls {
+impl Program for GUI {
     type Renderer = Renderer;
     type Message = Message;
 
@@ -39,6 +43,9 @@ impl Program for Controls {
                     Color::BLACK
                 };
             }
+            Message::CursorMoved(position) => {
+                self.cursor_position = position;
+            }
         }
         Command::none()
     }
@@ -48,6 +55,12 @@ impl Program for Controls {
             .width(Length::Fill)
             .height(Length::Fill)
             .align_items(Align::End)
+            .push(
+                Column::new()
+                    .width(Length::Shrink)
+                    .align_items(Align::Start)
+                    .push(Text::new(format!("Cursor position: x = {}, y = {}", self.cursor_position.x, self.cursor_position.y)).size(15).color([0.8, 0.8, 0.8]))
+            )
             .push(
                 Column::new()
                     .width(Length::Fill)

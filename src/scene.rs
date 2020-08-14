@@ -163,7 +163,7 @@ impl Scene {
             format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Mailbox,
+            present_mode: wgpu::PresentMode::Fifo,
         };
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
         let vertex_buffer = device
@@ -339,9 +339,13 @@ impl Scene {
             WindowEvent::CursorMoved { position, .. } => {
                 let mouse_dx = position.x - self.last_mouse_pos.x;
                 let mouse_dy = position.y - self.last_mouse_pos.y;
-                self.last_mouse_pos = *position;
-                if self.mouse_pressed {
-                    self.camera_controller.process_mouse(mouse_dx, mouse_dy);
+                // mouse position changes either by x or by y, but not simultaneously
+                // wait until delta is more than 2 so that both x and y changed
+                if mouse_dx.abs() > 3.0 || mouse_dy.abs() > 3.0 {
+                    self.last_mouse_pos = *position;
+                }
+                if self.mouse_pressed && (mouse_dx.abs() > 3.0 || mouse_dy.abs() > 3.0) {
+                    self.camera_controller.process_mouse(mouse_dx / 8.0, mouse_dy / 8.0);
                 }
                 // todo CursorMoved are used in both scene and main
                 false
