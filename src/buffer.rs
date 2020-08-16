@@ -1,12 +1,12 @@
 use cgmath::prelude::*;
-use cgmath::Matrix4;
+use cgmath::{Matrix4, Vector4};
 use crate::camera::{Camera, Projection};
 
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct Uniforms {
-    view_position: cgmath::Vector4<f32>,
-    view_proj: cgmath::Matrix4<f32>,
+    view_position: Vector4<f32>,
+    view_proj: Matrix4<f32>,
 }
 
 unsafe impl bytemuck::Pod for Uniforms {}

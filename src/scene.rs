@@ -1,6 +1,5 @@
 use crate::camera::{Camera, CameraController, Projection};
 use crate::texture;
-use cgmath;
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::PipelineLayout;
 use iced_wgpu::{Backend, Renderer, Settings, Viewport};
@@ -17,30 +16,11 @@ use winit::{
 };
 use winit::event_loop::ControlFlow;
 use std::time::Instant;
+use crate::instance::{Instance, NUM_ROWS, NUM_INSTANCES_PER_ROW, INSTANCE_DISPLACEMENT};
+use cgmath::{Point3, Deg, Quaternion, Vector3, Matrix4};
+use cgmath::prelude::*;
 
-const KEEP_CURSOR_POS_NUM_FRAMES: usize = 3;
-
-// struct Instance {
-//     position: cgmath::Vector3<f32>,
-//     rotation: cgmath::Quaternion<f32>,
-// }
-//
-// impl Instance {
-//     fn to_raw(&self) -> InstanceRaw {
-//         InstanceRaw {
-//             model: cgmath::Matrix4::from_translation(self.position) * cgmath::Matrix4::from(self.rotation),
-//         }
-//     }
-// }
-//
-// #[repr(C)]
-// #[derive(Copy, Clone)]
-// struct InstanceRaw {
-//     model: cgmath::Matrix4<f32>,
-// }
-//
-// unsafe impl bytemuck::Pod for InstanceRaw {}
-// unsafe impl bytemuck::Zeroable for InstanceRaw {}
+const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
 pub struct State {
     viewport: Viewport,
@@ -55,9 +35,11 @@ pub struct State {
     device: wgpu::Device,
     renderer: Renderer,
 
-    state: program::State<GUI>,
+    program_state: program::State<GUI>,
 
     diffuse_bind_group: wgpu::BindGroup,
+
+    instances: Vec<Instance>,
 
     index_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
@@ -92,8 +74,8 @@ impl State {
                 },
                 wgpu::BackendBit::PRIMARY,
             )
-            .await
-            .expect("Request adapter");
+                .await
+                .expect("Request adapter");
 
             adapter
                 .request_device(&wgpu::DeviceDescriptor {
@@ -118,12 +100,37 @@ impl State {
         let index_buffer =
             device.create_buffer_with_data(bytemuck::cast_slice(INDICES), wgpu::BufferUsage::INDEX);
         let camera = Camera::new(
-            cgmath::Point3::new(0.0, 0.0, 2.0),
-            cgmath::Deg(-90.0),
-            cgmath::Deg(0.0),
+            Point3::new(0.0, 0.0, 2.0),
+            Deg(-90.0),
+            Deg(0.0),
         );
         let projection =
-            Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(50.0), 0.1, 100.0);
+            Projection::new(sc_desc.width, sc_desc.height, Deg(50.0), 0.1, 100.0);
+
+        let instances = (0..NUM_ROWS).flat_map(|z| {
+            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                let position = Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
+                let rotation = if position.is_zero() {
+                    // this is needed so an object at (0, 0, 0) won't get scaled to zero
+                    // as Quaternions can effect scale if they're not created correctly
+                    Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
+                } else {
+                    Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
+                };
+
+                Instance {
+                    position,
+                    rotation,
+                }
+            })
+        }).collect::<Vec<_>>();
+
+        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        let instance_buffer_size = instance_data.len() * std::mem::size_of::<Matrix4<f32>>();
+        let instance_buffer = device.create_buffer_with_data(
+            bytemuck::cast_slice(&instance_data),
+            wgpu::BufferUsage::STORAGE_READ,
+        );
 
         let mut uniforms = Uniforms::new();
         uniforms.update_view_proj(&camera, &projection);
@@ -133,22 +140,41 @@ impl State {
         );
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
-                    ty: wgpu::BindingType::UniformBuffer { dynamic: false },
-                }],
+                bindings: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::VERTEX,
+                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::VERTEX,
+                        ty: wgpu::BindingType::StorageBuffer {
+                            dynamic: false,
+                            readonly: true,
+                        },
+                    },
+                ],
                 label: Some("uniform_bind_group_layout"),
             });
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &uniform_bind_group_layout,
-            bindings: &[wgpu::Binding {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer {
-                    buffer: &uniform_buffer,
-                    range: 0..std::mem::size_of_val(&uniforms) as wgpu::BufferAddress,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &uniform_buffer,
+                        range: 0..std::mem::size_of_val(&uniforms) as wgpu::BufferAddress,
+                    },
                 },
-            }],
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &instance_buffer,
+                        range: 0..instance_buffer_size as wgpu::BufferAddress,
+                    },
+                },
+            ],
             label: Some("uniform_bind_group"),
         });
 
@@ -221,8 +247,9 @@ impl State {
             queue,
             device,
             renderer,
-            state,
+            program_state: state,
             diffuse_bind_group,
+            instances,
             vertex_buffer,
             index_buffer,
             uniforms,
@@ -273,7 +300,7 @@ impl State {
         render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
         render_pass.set_vertex_buffer(0, &self.vertex_buffer, 0, 0);
         render_pass.set_index_buffer(&self.index_buffer, 0, 0);
-        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..self.instances.len() as _);
     }
 
     fn resize(&mut self, new_size: PhysicalSize<u32>) {
@@ -297,7 +324,7 @@ impl State {
                         ..
                     } => {
                         self.camera_controller.process_keyboard(*key, *state);
-                    },
+                    }
                     WindowEvent::MouseWheel { delta, .. } => {
                         self.camera_controller.process_scroll(delta);
                     }
@@ -333,12 +360,12 @@ impl State {
                     _ => {}
                 }
                 if let Some(event) = iced_winit::conversion::window_event(&event, self.window.scale_factor(), self.modifiers) {
-                    self.state.queue_event(event);
+                    self.program_state.queue_event(event);
                 }
             }
             Event::MainEventsCleared => {
-                if !self.state.is_queue_empty() {
-                    let _ = self.state.update(
+                if !self.program_state.is_queue_empty() {
+                    let _ = self.program_state.update(
                         self.viewport.logical_size(),
                         conversion::cursor_position(self.cursor_position, self.viewport.scale_factor()),
                         None,
@@ -361,7 +388,7 @@ impl State {
                 let mut encoder = self
                     .device
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-                let program = self.state.program();
+                let program = self.program_state.program();
                 {
                     let mut render_pass =
                         self.clear(&frame.view, &mut encoder, program.background_color());
@@ -372,7 +399,7 @@ impl State {
                     &mut encoder,
                     &frame.view,
                     &self.viewport,
-                    self.state.primitive(),
+                    self.program_state.primitive(),
                     &self.debug.overlay(),
                 );
                 self.queue.submit(&[encoder.finish()]);
@@ -381,7 +408,7 @@ impl State {
             Event::DeviceEvent { event, .. } => {
                 match event {
                     DeviceEvent::MouseMotion { delta } => {
-                        if self.last_frames_cursor_deltas.len() > KEEP_CURSOR_POS_NUM_FRAMES {
+                        if self.last_frames_cursor_deltas.len() > KEEP_CURSOR_POS_FOR_NUM_FRAMES {
                             self.last_frames_cursor_deltas.drain(..1);
                         }
                         self.last_frames_cursor_deltas.push(*delta);
@@ -389,8 +416,8 @@ impl State {
                         if self.camera_mode {
                             self.camera_controller.process_mouse(mouse_dx / 2.0, mouse_dy / 2.0);
                         }
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 }
             }
             _ => {}

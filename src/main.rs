@@ -7,6 +7,7 @@ mod scene;
 mod texture;
 mod buffer;
 mod vertex;
+mod instance;
 
 use scene::State;
 use shaderc;
