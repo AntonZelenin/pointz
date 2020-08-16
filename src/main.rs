@@ -20,7 +20,6 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
-use winit::event::DeviceEvent;
 
 pub fn main() {
     env_logger::init();
@@ -60,13 +59,15 @@ pub fn main() {
     );
     let mut last_render_time = std::time::Instant::now();
 
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent { event, .. } => {
-            if !scene.input(&event) {
+    event_loop.run(move |event, _, control_flow| {
+        if scene.input(&event) {
+            return;
+        }
+        match event {
+            Event::WindowEvent { event, .. } => {
                 match event {
                     WindowEvent::CursorMoved { position, .. } => {
                         cursor_position = position;
-                        // warn!("Cursor position: x = {}, y = {}", cursor_position.x, cursor_position.y);
                     }
                     WindowEvent::ModifiersChanged(new_modifiers) => {
                         modifiers = new_modifiers;
@@ -83,68 +84,55 @@ pub fn main() {
                     }
                     _ => {}
                 }
+                if let Some(event) = iced_winit::conversion::window_event(&event, window.scale_factor(), modifiers) {
+                    state.queue_event(event);
+                }
             }
-            if let Some(event) =
-                iced_winit::conversion::window_event(&event, window.scale_factor(), modifiers)
-            {
-                state.queue_event(event);
+            Event::MainEventsCleared => {
+                if !state.is_queue_empty() {
+                    let _ = state.update(
+                        viewport.logical_size(),
+                        conversion::cursor_position(cursor_position, viewport.scale_factor()),
+                        None,
+                        &mut renderer,
+                        &mut debug,
+                    );
+                }
+                window.request_redraw();
             }
-        }
-        Event::MainEventsCleared => {
-            if !state.is_queue_empty() {
-                let _ = state.update(
-                    viewport.logical_size(),
-                    conversion::cursor_position(cursor_position, viewport.scale_factor()),
-                    None,
-                    &mut renderer,
-                    &mut debug,
+            Event::RedrawRequested(_) => {
+                let now = std::time::Instant::now();
+                let dt = now - last_render_time;
+                last_render_time = now;
+                // warn!("{}", dt.as_secs_f32());
+                scene.update(dt);
+                if resized {
+                    scene.resize(window.inner_size());
+                    resized = false;
+                }
+                let frame = scene.swap_chain.get_next_texture().expect("Next frame");
+                let mut encoder = scene
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                let program = state.program();
+                {
+                    let mut render_pass =
+                        scene.clear(&frame.view, &mut encoder, program.background_color());
+                    scene.draw(&mut render_pass);
+                }
+                let mouse_interaction = renderer.backend_mut().draw(
+                    &mut scene.device,
+                    &mut encoder,
+                    &frame.view,
+                    &viewport,
+                    state.primitive(),
+                    &debug.overlay(),
                 );
+                scene.queue.submit(&[encoder.finish()]);
+                window.set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
             }
-            window.request_redraw();
+            _ => {}
         }
-        Event::RedrawRequested(_) => {
-            let now = std::time::Instant::now();
-            let dt = now - last_render_time;
-            last_render_time = now;
-            scene.update(dt);
-            if resized {
-                scene.resize(window.inner_size());
-                resized = false;
-            }
-            let frame = scene.swap_chain.get_next_texture().expect("Next frame");
-            let mut encoder = scene
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-            let program = state.program();
-            {
-                let mut render_pass =
-                    scene.clear(&frame.view, &mut encoder, program.background_color());
-                scene.draw(&mut render_pass);
-            }
-            let mouse_interaction = renderer.backend_mut().draw(
-                &mut scene.device,
-                &mut encoder,
-                &frame.view,
-                &viewport,
-                state.primitive(),
-                &debug.overlay(),
-            );
-            scene.queue.submit(&[encoder.finish()]);
-            window.set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
-        }
-        // Event::DeviceEvent { event, .. } => {
-        //     match event {
-        //         DeviceEvent::MouseMotion { delta } => {
-        //             cursor_position = PhysicalPosition::new(delta.0, delta.1);
-        //             // warn!("Cursor position: x = {}, y = {}", delta.0, delta.1);
-        //         },
-        //         // DeviceEvent::Motion { axis, value } => {
-        //         //     warn!("Axis: {}, value: {}", axis, value);
-        //         // }
-        //         _ => {},
-        //     }
-        // }
-        _ => {}
     })
 }
 

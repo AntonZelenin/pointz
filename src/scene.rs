@@ -7,7 +7,9 @@ use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::PipelineLayout;
 use iced_winit::{futures, winit, Color};
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::{ElementState, KeyboardInput, MouseButton, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, KeyboardInput, MouseButton, WindowEvent, Event};
+
+const KEEP_CURSOR_POS_NUM_FRAMES: usize = 3;
 
 const VERTICES: [Vertex; 4] = [
     Vertex {
@@ -117,7 +119,6 @@ pub struct Scene {
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
 
-    #[allow(dead_code)]
     diffuse_texture: texture::Texture,
     diffuse_bind_group: wgpu::BindGroup,
 
@@ -129,7 +130,7 @@ pub struct Scene {
     camera: Camera,
     projection: Projection,
     camera_controller: CameraController,
-    last_mouse_pos: PhysicalPosition<f64>,
+    last_frames_cursor_deltas: Vec<(f64, f64)>,
     mouse_pressed: bool,
 }
 
@@ -176,7 +177,7 @@ impl Scene {
             cgmath::Deg(0.0),
         );
         let projection =
-            Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
+            Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(50.0), 0.1, 100.0);
 
         let mut uniforms = Uniforms::new();
         uniforms.update_view_proj(&camera, &projection);
@@ -266,7 +267,7 @@ impl Scene {
             camera,
             projection,
             camera_controller: CameraController::new(4.0, 0.4),
-            last_mouse_pos: (0.0, 0.0).into(),
+            last_frames_cursor_deltas: Vec::with_capacity(3),
             mouse_pressed: false,
         }
     }
@@ -313,46 +314,66 @@ impl Scene {
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
-    pub fn input(&mut self, event: &WindowEvent) -> bool {
+    pub fn input(&mut self, event: &Event<()>) -> bool {
         match event {
-            WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        virtual_keycode: Some(key),
+            Event::WindowEvent { event, .. } => {
+                match event {
+                    WindowEvent::KeyboardInput {
+                        input:
+                        KeyboardInput {
+                            virtual_keycode: Some(key),
+                            state,
+                            ..
+                        },
+                        ..
+                    } => self.camera_controller.process_keyboard(*key, *state),
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        self.camera_controller.process_scroll(delta);
+                        true
+                    }
+                    WindowEvent::MouseInput {
+                        button: MouseButton::Right,
                         state,
                         ..
+                    } => {
+                        self.mouse_pressed = *state == ElementState::Pressed;
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            Event::DeviceEvent { event, .. } => {
+                match event {
+                    DeviceEvent::MouseMotion { delta } => {
+                        // warn!("Cursor position: x = {}, y = {}", delta.0, delta.1);
+                        if self.last_frames_cursor_deltas.len() > KEEP_CURSOR_POS_NUM_FRAMES {
+                            self.last_frames_cursor_deltas.drain(..1);
+                        }
+                        self.last_frames_cursor_deltas.push(*delta);
+                        let (mouse_dx, mouse_dy) = self.get_avg_cursor_pos();
+                        if self.mouse_pressed {
+                            self.camera_controller.process_mouse(mouse_dx / 2.0, mouse_dy / 2.0);
+                        }
+                        // todo CursorMoved are used in both scene and main
+                        false
+                        // true
                     },
-                ..
-            } => self.camera_controller.process_keyboard(*key, *state),
-            WindowEvent::MouseWheel { delta, .. } => {
-                self.camera_controller.process_scroll(delta);
-                true
-            }
-            WindowEvent::MouseInput {
-                button: MouseButton::Right,
-                state,
-                ..
-            } => {
-                self.mouse_pressed = *state == ElementState::Pressed;
-                true
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                let mouse_dx = position.x - self.last_mouse_pos.x;
-                let mouse_dy = position.y - self.last_mouse_pos.y;
-                // mouse position changes either by x or by y, but not simultaneously
-                // wait until delta is more than 2 so that both x and y changed
-                if mouse_dx.abs() > 3.0 || mouse_dy.abs() > 3.0 {
-                    self.last_mouse_pos = *position;
+                    _ => false,
                 }
-                if self.mouse_pressed && (mouse_dx.abs() > 3.0 || mouse_dy.abs() > 3.0) {
-                    self.camera_controller.process_mouse(mouse_dx / 8.0, mouse_dy / 8.0);
-                }
-                // todo CursorMoved are used in both scene and main
-                false
-                // true
             }
-            _ => false,
+            _ => false
         }
+    }
+
+    fn get_avg_cursor_pos(&self) -> (f64, f64) {
+        let mut avg_dx = 0.0;
+        let mut avg_dy = 0.0;
+        for (x, y) in self.last_frames_cursor_deltas.iter() {
+            avg_dx += x;
+            avg_dy += y;
+        }
+        let size = self.last_frames_cursor_deltas.len() as f64;
+        (avg_dx / size, avg_dy / size)
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {

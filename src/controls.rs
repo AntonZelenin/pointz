@@ -13,7 +13,6 @@ pub struct GUI {
 #[derive(Debug, Clone)]
 pub enum Message {
     ChangeBackgroundColor,
-    CursorMoved(PhysicalPosition<f64>),
 }
 
 impl GUI {
@@ -42,9 +41,6 @@ impl Program for GUI {
                 } else {
                     Color::BLACK
                 };
-            }
-            Message::CursorMoved(position) => {
-                self.cursor_position = position;
             }
         }
         Command::none()
