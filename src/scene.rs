@@ -1,60 +1,24 @@
 use crate::camera::{Camera, CameraController, Projection};
 use crate::texture;
 use cgmath;
-use cgmath::prelude::*;
-use cgmath::{Matrix4, Point3};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::PipelineLayout;
-use iced_winit::{futures, winit, Color};
-use winit::dpi::{PhysicalPosition, PhysicalSize};
+use iced_wgpu::{Backend, Renderer, Settings, Viewport};
+use iced_winit::{conversion, futures, winit, Color, program, Debug, Size};
+use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyboardInput, MouseButton, WindowEvent, Event};
+use crate::buffer::Uniforms;
+use crate::vertex::{VERTICES, INDICES, Vertex};
+use crate::controls::GUI;
+use winit::{
+    dpi::PhysicalPosition,
+    event::ModifiersState,
+    window::Window,
+};
+use winit::event_loop::ControlFlow;
+use std::time::Instant;
 
 const KEEP_CURSOR_POS_NUM_FRAMES: usize = 3;
-
-const VERTICES: [Vertex; 4] = [
-    Vertex {
-        position: [-2.5, 0.0, 0.0],
-        tex_coords: [0.4, 0.0],
-    },
-    Vertex {
-        position: [2.5, 0.0, 0.0],
-        tex_coords: [0.8, 0.0],
-    },
-    Vertex {
-        position: [0.0, 2.5, -2.3],
-        tex_coords: [0.5, 0.8],
-    },
-    Vertex {
-        position: [0.0, 0.0, -2.5],
-        tex_coords: [0.0, 0.0],
-    },
-];
-
-const INDICES: &[u16] = &[2, 1, 0, 0, 1, 3, 1, 2, 3];
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-struct Uniforms {
-    view_position: cgmath::Vector4<f32>,
-    view_proj: cgmath::Matrix4<f32>,
-}
-
-unsafe impl bytemuck::Pod for Uniforms {}
-unsafe impl bytemuck::Zeroable for Uniforms {}
-
-impl Uniforms {
-    fn new() -> Self {
-        Self {
-            view_position: Zero::zero(),
-            view_proj: Matrix4::identity(),
-        }
-    }
-
-    fn update_view_proj(&mut self, camera: &Camera, projection: &Projection) {
-        self.view_position = camera.position.to_homogeneous();
-        self.view_proj = projection.calc_matrix() * camera.calc_matrix()
-    }
-}
 
 // struct Instance {
 //     position: cgmath::Vector3<f32>,
@@ -78,67 +42,49 @@ impl Uniforms {
 // unsafe impl bytemuck::Pod for InstanceRaw {}
 // unsafe impl bytemuck::Zeroable for InstanceRaw {}
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-struct Vertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2],
-}
+pub struct State {
+    viewport: Viewport,
+    surface: wgpu::Surface,
+    window: Window,
 
-unsafe impl bytemuck::Pod for Vertex {}
-unsafe impl bytemuck::Zeroable for Vertex {}
-
-impl Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
-        use std::mem;
-        wgpu::VertexBufferDescriptor {
-            stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::InputStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttributeDescriptor {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float3,
-                },
-                wgpu::VertexAttributeDescriptor {
-                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float2,
-                },
-            ],
-        }
-    }
-}
-
-pub struct Scene {
-    pub format: wgpu::TextureFormat,
-    pub surface: wgpu::Surface,
     sc_desc: wgpu::SwapChainDescriptor,
-    pub swap_chain: wgpu::SwapChain,
-    pipeline: wgpu::RenderPipeline,
-    pub queue: wgpu::Queue,
-    pub device: wgpu::Device,
+    swap_chain: wgpu::SwapChain,
 
-    diffuse_texture: texture::Texture,
+    pipeline: wgpu::RenderPipeline,
+    queue: wgpu::Queue,
+    device: wgpu::Device,
+    renderer: Renderer,
+
+    state: program::State<GUI>,
+
     diffuse_bind_group: wgpu::BindGroup,
 
-    pub index_buffer: wgpu::Buffer,
-    pub vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    vertex_buffer: wgpu::Buffer,
+
     uniforms: Uniforms,
     uniform_bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
+
     camera: Camera,
     projection: Projection,
     camera_controller: CameraController,
+
     last_frames_cursor_deltas: Vec<(f64, f64)>,
     mouse_pressed: bool,
+
+    modifiers: ModifiersState,
+    cursor_position: PhysicalPosition<f64>,
+    resized: bool,
+
+    last_render_time: Instant,
+    debug: Debug,
 }
 
-impl Scene {
-    pub fn new(window: &winit::window::Window) -> Scene {
-        let format = wgpu::TextureFormat::Bgra8UnormSrgb;
-        let surface = wgpu::Surface::create(window);
-        let (device, queue) = futures::executor::block_on(async {
+impl State {
+    pub fn new(window: winit::window::Window) -> State {
+        let surface = wgpu::Surface::create(&window);
+        let (mut device, queue) = futures::executor::block_on(async {
             let adapter = wgpu::Adapter::request(
                 &wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::Default,
@@ -161,7 +107,7 @@ impl Scene {
         let size = window.inner_size();
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-            format,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
@@ -172,7 +118,7 @@ impl Scene {
         let index_buffer =
             device.create_buffer_with_data(bytemuck::cast_slice(INDICES), wgpu::BufferUsage::INDEX);
         let camera = Camera::new(
-            Point3::new(0.0, 0.0, 2.0),
+            cgmath::Point3::new(0.0, 0.0, 2.0),
             cgmath::Deg(-90.0),
             cgmath::Deg(0.0),
         );
@@ -249,15 +195,33 @@ impl Scene {
                 bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
             });
 
-        Scene {
-            format,
+        let physical_size = window.inner_size();
+        let viewport = Viewport::with_physical_size(
+            Size::new(physical_size.width, physical_size.height),
+            window.scale_factor(),
+        );
+
+        let mut debug = Debug::new();
+        let mut renderer = iced_wgpu::Renderer::new(Backend::new(&mut device, Settings::default()));
+        let state = program::State::new(
+            GUI::new(),
+            viewport.logical_size(),
+            conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), viewport.scale_factor()),
+            &mut renderer,
+            &mut debug,
+        );
+
+        State {
+            viewport,
             surface,
+            window,
             swap_chain,
             sc_desc,
             pipeline: build_pipeline(&device, &render_pipeline_layout),
             queue,
             device,
-            diffuse_texture,
+            renderer,
+            state,
             diffuse_bind_group,
             vertex_buffer,
             index_buffer,
@@ -269,10 +233,15 @@ impl Scene {
             camera_controller: CameraController::new(4.0, 0.4),
             last_frames_cursor_deltas: Vec::with_capacity(3),
             mouse_pressed: false,
+            modifiers: ModifiersState::default(),
+            cursor_position: PhysicalPosition::new(0.0, 0.0),
+            resized: false,
+            last_render_time: std::time::Instant::now(),
+            debug,
         }
     }
 
-    pub fn clear<'a>(
+    fn clear<'a>(
         &self,
         target: &'a wgpu::TextureView,
         encoder: &'a mut wgpu::CommandEncoder,
@@ -298,7 +267,7 @@ impl Scene {
         })
     }
 
-    pub fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
+    fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
@@ -307,14 +276,14 @@ impl Scene {
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }
 
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+    fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.projection.resize(new_size.width, new_size.height);
         self.sc_desc.width = new_size.width;
         self.sc_desc.height = new_size.height;
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
-    pub fn input(&mut self, event: &Event<()>) -> bool {
+    pub fn process_events(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
         match event {
             Event::WindowEvent { event, .. } => {
                 match event {
@@ -326,10 +295,11 @@ impl Scene {
                             ..
                         },
                         ..
-                    } => self.camera_controller.process_keyboard(*key, *state),
+                    } => {
+                        self.camera_controller.process_keyboard(*key, *state);
+                    },
                     WindowEvent::MouseWheel { delta, .. } => {
                         self.camera_controller.process_scroll(delta);
-                        true
                     }
                     WindowEvent::MouseInput {
                         button: MouseButton::Right,
@@ -337,15 +307,74 @@ impl Scene {
                         ..
                     } => {
                         self.mouse_pressed = *state == ElementState::Pressed;
-                        true
                     }
-                    _ => false,
+                    WindowEvent::CursorMoved { position, .. } => {
+                        self.cursor_position = *position;
+                    }
+                    WindowEvent::ModifiersChanged(new_modifiers) => {
+                        self.modifiers = *new_modifiers;
+                    }
+                    WindowEvent::Resized(new_size) => {
+                        self.viewport = Viewport::with_physical_size(
+                            Size::new(new_size.width, new_size.height),
+                            self.window.scale_factor(),
+                        );
+                        self.resized = true;
+                    }
+                    WindowEvent::CloseRequested => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    _ => {}
                 }
+                if let Some(event) = iced_winit::conversion::window_event(&event, self.window.scale_factor(), self.modifiers) {
+                    self.state.queue_event(event);
+                }
+            }
+            Event::MainEventsCleared => {
+                if !self.state.is_queue_empty() {
+                    let _ = self.state.update(
+                        self.viewport.logical_size(),
+                        conversion::cursor_position(self.cursor_position, self.viewport.scale_factor()),
+                        None,
+                        &mut self.renderer,
+                        &mut self.debug,
+                    );
+                }
+                self.window.request_redraw();
+            }
+            Event::RedrawRequested(_) => {
+                let now = std::time::Instant::now();
+                let dt = now - self.last_render_time;
+                self.last_render_time = now;
+                self.update(dt);
+                if self.resized {
+                    self.resize(self.window.inner_size());
+                    self.resized = false;
+                }
+                let frame = self.swap_chain.get_next_texture().expect("Next frame");
+                let mut encoder = self
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                let program = self.state.program();
+                {
+                    let mut render_pass =
+                        self.clear(&frame.view, &mut encoder, program.background_color());
+                    self.draw(&mut render_pass);
+                }
+                let mouse_interaction = self.renderer.backend_mut().draw(
+                    &mut self.device,
+                    &mut encoder,
+                    &frame.view,
+                    &self.viewport,
+                    self.state.primitive(),
+                    &self.debug.overlay(),
+                );
+                self.queue.submit(&[encoder.finish()]);
+                self.window.set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
             }
             Event::DeviceEvent { event, .. } => {
                 match event {
                     DeviceEvent::MouseMotion { delta } => {
-                        // warn!("Cursor position: x = {}, y = {}", delta.0, delta.1);
                         if self.last_frames_cursor_deltas.len() > KEEP_CURSOR_POS_NUM_FRAMES {
                             self.last_frames_cursor_deltas.drain(..1);
                         }
@@ -354,15 +383,12 @@ impl Scene {
                         if self.mouse_pressed {
                             self.camera_controller.process_mouse(mouse_dx / 2.0, mouse_dy / 2.0);
                         }
-                        // todo CursorMoved are used in both scene and main
-                        false
-                        // true
                     },
-                    _ => false,
+                    _ => {},
                 }
             }
-            _ => false
-        }
+            _ => {}
+        };
     }
 
     fn get_avg_cursor_pos(&self) -> (f64, f64) {
@@ -376,7 +402,7 @@ impl Scene {
         (avg_dx / size, avg_dy / size)
     }
 
-    pub fn update(&mut self, dt: std::time::Duration) {
+    fn update(&mut self, dt: std::time::Duration) {
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.uniforms
             .update_view_proj(&self.camera, &self.projection);
