@@ -7,7 +7,6 @@ layout(location=0) out vec2 v_tex_coords;
 
 layout(set=0, binding=0)
 uniform Uniforms {
-    vec3 u_view_pos;
     mat4 u_view_proj;
 };
 

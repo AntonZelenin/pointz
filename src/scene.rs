@@ -1,24 +1,21 @@
+use crate::buffer::Uniforms;
 use crate::camera::{Camera, CameraController, Projection};
+use crate::controls::GUI;
+use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
+use crate::model;
+use crate::model::{Vertex, DrawModel, Model};
+use crate::texture::Texture;
+use cgmath::prelude::*;
+use cgmath::{Deg, Matrix4, Point3, Quaternion, Rad, Vector3};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::PipelineLayout;
 use iced_wgpu::{Backend, Renderer, Settings, Viewport};
-use iced_winit::{conversion, futures, winit, program, Debug, Size};
-use winit::dpi::PhysicalSize;
-use winit::event::{DeviceEvent, ElementState, KeyboardInput, MouseButton, WindowEvent, Event};
-use crate::buffer::Uniforms;
-use crate::vertex::{VERTICES, INDICES, Vertex};
-use crate::controls::GUI;
-use winit::{
-    dpi::PhysicalPosition,
-    event::ModifiersState,
-    window::Window,
-};
-use winit::event_loop::ControlFlow;
+use iced_winit::{conversion, futures, program, winit, Debug, Size};
 use std::time::Instant;
-use crate::instance::{Instance, NUM_ROWS, NUM_INSTANCES_PER_ROW, INSTANCE_DISPLACEMENT};
-use cgmath::{Point3, Deg, Quaternion, Vector3, Matrix4, Rad};
-use cgmath::prelude::*;
-use crate::texture::Texture;
+use winit::dpi::PhysicalSize;
+use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, WindowEvent};
+use winit::event_loop::ControlFlow;
+use winit::{dpi::PhysicalPosition, event::ModifiersState, window::Window};
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
@@ -37,14 +34,12 @@ pub struct State {
 
     program_state: program::State<GUI>,
 
-    diffuse_bind_group: wgpu::BindGroup,
     depth_texture: Texture,
 
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
 
-    index_buffer: wgpu::Buffer,
-    vertex_buffer: wgpu::Buffer,
+    obj_model: Model,
 
     uniforms: Uniforms,
     uniform_bind_group: wgpu::BindGroup,
@@ -76,8 +71,8 @@ impl State {
                 },
                 wgpu::BackendBit::PRIMARY,
             )
-                .await
-                .expect("Request adapter");
+            .await
+            .expect("Request adapter");
 
             adapter
                 .request_device(&wgpu::DeviceDescriptor {
@@ -97,35 +92,29 @@ impl State {
             present_mode: wgpu::PresentMode::Fifo,
         };
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
-        let vertex_buffer = device
-            .create_buffer_with_data(bytemuck::cast_slice(&VERTICES), wgpu::BufferUsage::VERTEX);
-        let index_buffer =
-            device.create_buffer_with_data(bytemuck::cast_slice(INDICES), wgpu::BufferUsage::INDEX);
-        let camera = Camera::new(
-            Point3::new(-30.0, 25.0, 25.0),
-            Deg(0.0),
-            Deg(-40.0),
-        );
-        let projection =
-            Projection::new(sc_desc.width, sc_desc.height, Deg(50.0), 0.1, 100.0);
+        let camera = Camera::new(Point3::new(-30.0, 25.0, 25.0), Deg(0.0), Deg(-40.0));
+        let projection = Projection::new(sc_desc.width, sc_desc.height, Deg(50.0), 0.1, 1000.0);
 
-        let instances = (0..NUM_ROWS).flat_map(|z| {
-            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let position = Vector3 { x: (x * 6) as f32, y: 0.0, z: (z * 6) as f32 } - INSTANCE_DISPLACEMENT;
-                let rotation = if position.is_zero() {
-                    // this is needed so an object at (0, 0, 0) won't get scaled to zero
-                    // as Quaternions can effect scale if they're not created correctly
-                    Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
-                } else {
-                    Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
-                };
+        let instances = (0..NUM_ROWS)
+            .flat_map(|z| {
+                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                    let position = Vector3 {
+                        x: (x * 6) as f32,
+                        y: 0.0,
+                        z: (z * 6) as f32,
+                    } - INSTANCE_DISPLACEMENT;
+                    let rotation = if position.is_zero() {
+                        // this is needed so an object at (0, 0, 0) won't get scaled to zero
+                        // as Quaternions can effect scale if they're not created correctly
+                        Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
+                    } else {
+                        Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
+                    };
 
-                Instance {
-                    position,
-                    rotation,
-                }
+                    Instance { position, rotation }
+                })
             })
-        }).collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
         let instance_buffer_size = instance_data.len() * std::mem::size_of::<Matrix4<f32>>();
@@ -180,10 +169,6 @@ impl State {
             label: Some("uniform_bind_group"),
         });
 
-        let diffuse_bytes = include_bytes!("textures/pnggradHDrgba.png");
-        let (diffuse_texture, cmd_buffer) =
-            Texture::from_bytes(&device, diffuse_bytes, "pnggradHDrgba.png").unwrap();
-        queue.submit(&[cmd_buffer]);
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 bindings: &[
@@ -192,8 +177,9 @@ impl State {
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::SampledTexture {
                             multisampled: false,
+                            // component_type: wgpu::TextureComponentType::Uint,
+                            component_type: wgpu::TextureComponentType::Float,
                             dimension: wgpu::TextureViewDimension::D2,
-                            component_type: wgpu::TextureComponentType::Uint,
                         },
                     },
                     wgpu::BindGroupLayoutEntry {
@@ -204,20 +190,6 @@ impl State {
                 ],
                 label: Some("texture_bind_group_layout"),
             });
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &texture_bind_group_layout,
-            bindings: &[
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                },
-            ],
-            label: Some("diffuse_bind_group"),
-        });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
@@ -241,6 +213,14 @@ impl State {
 
         let depth_texture = Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
 
+        let (obj_model, command_buffers) = model::Model::load(
+            &device,
+            &texture_bind_group_layout,
+            "resources/cube.obj",
+        ).unwrap();
+
+        queue.submit(&command_buffers);
+
         State {
             viewport,
             surface,
@@ -252,12 +232,10 @@ impl State {
             device,
             renderer,
             program_state: state,
-            diffuse_bind_group,
             depth_texture,
             instances,
             instance_buffer,
-            vertex_buffer,
-            index_buffer,
+            obj_model,
             uniforms,
             uniform_bind_group,
             uniform_buffer,
@@ -276,18 +254,22 @@ impl State {
 
     fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-        render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, &self.vertex_buffer, 0, 0);
-        render_pass.set_index_buffer(&self.index_buffer, 0, 0);
-        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..self.instances.len() as _);
+        // let mesh = &self.obj_model.meshes[0];
+        // let material = &self.obj_model.materials[mesh.material];
+        // render_pass.draw_mesh_instanced(&mesh,  material,0..self.instances.len() as _, &self.uniform_bind_group);
+        render_pass.draw_model_instanced(
+            &self.obj_model,
+            0..self.instances.len() as u32,
+            &self.uniform_bind_group,
+        );
     }
 
     fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.projection.resize(new_size.width, new_size.height);
         self.sc_desc.width = new_size.width;
         self.sc_desc.height = new_size.height;
-        self.depth_texture = Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
+        self.depth_texture =
+            Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
@@ -297,11 +279,11 @@ impl State {
                 match event {
                     WindowEvent::KeyboardInput {
                         input:
-                        KeyboardInput {
-                            virtual_keycode: Some(key),
-                            state,
-                            ..
-                        },
+                            KeyboardInput {
+                                virtual_keycode: Some(key),
+                                state,
+                                ..
+                            },
                         ..
                     } => {
                         self.camera_controller.process_keyboard(*key, *state);
@@ -320,7 +302,9 @@ impl State {
                     WindowEvent::CursorMoved { position, .. } => {
                         if self.camera_mode {
                             // make cursor stay at the same place
-                            self.window.set_cursor_position(self.cursor_position).unwrap();
+                            self.window
+                                .set_cursor_position(self.cursor_position)
+                                .unwrap();
                         } else {
                             self.cursor_position = *position;
                         }
@@ -340,7 +324,11 @@ impl State {
                     }
                     _ => {}
                 }
-                if let Some(event) = iced_winit::conversion::window_event(&event, self.window.scale_factor(), self.modifiers) {
+                if let Some(event) = iced_winit::conversion::window_event(
+                    &event,
+                    self.window.scale_factor(),
+                    self.modifiers,
+                ) {
                     self.program_state.queue_event(event);
                 }
             }
@@ -348,7 +336,10 @@ impl State {
                 if !self.program_state.is_queue_empty() {
                     let _ = self.program_state.update(
                         self.viewport.logical_size(),
-                        conversion::cursor_position(self.cursor_position, self.viewport.scale_factor()),
+                        conversion::cursor_position(
+                            self.cursor_position,
+                            self.viewport.scale_factor(),
+                        ),
                         None,
                         &mut self.renderer,
                         &mut self.debug,
@@ -371,24 +362,24 @@ impl State {
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                 let program = self.program_state.program();
                 {
-                    let mut render_pass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                                attachment: &frame.view,
-                                resolve_target: None,
-                                load_op: wgpu::LoadOp::Clear,
-                                store_op: wgpu::StoreOp::Store,
-                                clear_color: {
-                                    let [r, g, b, a] = program.background_color().into_linear();
-                                    wgpu::Color {
-                                        r: r as f64,
-                                        g: g as f64,
-                                        b: b as f64,
-                                        a: a as f64,
-                                    }
-                                },
-                            }],
-                            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                            attachment: &frame.view,
+                            resolve_target: None,
+                            load_op: wgpu::LoadOp::Clear,
+                            store_op: wgpu::StoreOp::Store,
+                            clear_color: {
+                                let [r, g, b, a] = program.background_color().into_linear();
+                                wgpu::Color {
+                                    r: r as f64,
+                                    g: g as f64,
+                                    b: b as f64,
+                                    a: a as f64,
+                                }
+                            },
+                        }],
+                        depth_stencil_attachment: Some(
+                            wgpu::RenderPassDepthStencilAttachmentDescriptor {
                                 attachment: &self.depth_texture.view,
                                 depth_load_op: wgpu::LoadOp::Clear,
                                 depth_store_op: wgpu::StoreOp::Store,
@@ -396,8 +387,9 @@ impl State {
                                 stencil_load_op: wgpu::LoadOp::Clear,
                                 stencil_store_op: wgpu::StoreOp::Store,
                                 clear_stencil: 0,
-                            }),
-                        });
+                            },
+                        ),
+                    });
                     self.draw(&mut render_pass);
                 }
                 let mouse_interaction = self.renderer.backend_mut().draw(
@@ -409,23 +401,23 @@ impl State {
                     &self.debug.overlay(),
                 );
                 self.queue.submit(&[encoder.finish()]);
-                self.window.set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
+                self.window
+                    .set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
             }
-            Event::DeviceEvent { event, .. } => {
-                match event {
-                    DeviceEvent::MouseMotion { delta } => {
-                        if self.last_frames_cursor_deltas.len() > KEEP_CURSOR_POS_FOR_NUM_FRAMES {
-                            self.last_frames_cursor_deltas.drain(..1);
-                        }
-                        self.last_frames_cursor_deltas.push(*delta);
-                        let (mouse_dx, mouse_dy) = self.get_avg_cursor_pos();
-                        if self.camera_mode {
-                            self.camera_controller.process_mouse(mouse_dx / 2.0, mouse_dy / 2.0);
-                        }
+            Event::DeviceEvent { event, .. } => match event {
+                DeviceEvent::MouseMotion { delta } => {
+                    if self.last_frames_cursor_deltas.len() > KEEP_CURSOR_POS_FOR_NUM_FRAMES {
+                        self.last_frames_cursor_deltas.drain(..1);
                     }
-                    _ => {}
+                    self.last_frames_cursor_deltas.push(*delta);
+                    let (mouse_dx, mouse_dy) = self.get_avg_cursor_pos();
+                    if self.camera_mode {
+                        self.camera_controller
+                            .process_mouse(mouse_dx / 2.0, mouse_dy / 2.0);
+                    }
                 }
-            }
+                _ => {}
+            },
             _ => {}
         };
     }
@@ -465,13 +457,24 @@ impl State {
         for instance in &mut self.instances {
             instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
         }
-        let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer_size = instance_data.len() * std::mem::size_of::<cgmath::Matrix4<f32>>();
+        let instance_data = self
+            .instances
+            .iter()
+            .map(Instance::to_raw)
+            .collect::<Vec<_>>();
+        let instance_buffer_size =
+            instance_data.len() * std::mem::size_of::<cgmath::Matrix4<f32>>();
         let instance_buffer = self.device.create_buffer_with_data(
             bytemuck::cast_slice(&instance_data),
             wgpu::BufferUsage::COPY_SRC,
         );
-        encoder.copy_buffer_to_buffer(&instance_buffer, 0, &self.instance_buffer, 0, instance_buffer_size as wgpu::BufferAddress);
+        encoder.copy_buffer_to_buffer(
+            &instance_buffer,
+            0,
+            &self.instance_buffer,
+            0,
+            instance_buffer_size as wgpu::BufferAddress,
+        );
 
         self.queue.submit(&[encoder.finish()]);
     }
@@ -499,7 +502,8 @@ fn build_pipeline(
         }),
         rasterization_state: Some(wgpu::RasterizationStateDescriptor {
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: wgpu::CullMode::None,
+            // cull_mode: wgpu::CullMode::None,
+            cull_mode: wgpu::CullMode::Back,
             depth_bias: 0,
             depth_bias_slope_scale: 0.0,
             depth_bias_clamp: 0.0,
@@ -521,8 +525,8 @@ fn build_pipeline(
             stencil_write_mask: 0,
         }),
         vertex_state: wgpu::VertexStateDescriptor {
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[Vertex::desc()],
+            index_format: wgpu::IndexFormat::Uint32,
+            vertex_buffers: &[model::ModelVertex::desc()],
         },
         sample_count: 1,
         sample_mask: !0,

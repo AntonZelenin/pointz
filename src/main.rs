@@ -1,23 +1,20 @@
 // #[macro_use]
 extern crate log;
 
+mod buffer;
 mod camera;
 mod controls;
+mod instance;
+mod model;
 mod scene;
 mod texture;
-mod buffer;
-mod vertex;
-mod instance;
 
 use scene::State;
 use shaderc;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use winit::{
-    event_loop::EventLoop,
-    window::Window,
-};
+use winit::{event_loop::EventLoop, window::Window};
 
 pub fn main() {
     env_logger::init();

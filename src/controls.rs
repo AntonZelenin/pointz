@@ -1,6 +1,6 @@
 use iced_wgpu::Renderer;
 use iced_winit::{
-    button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text
+    button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text,
 };
 use winit::dpi::PhysicalPosition;
 
@@ -55,7 +55,14 @@ impl Program for GUI {
                 Column::new()
                     .width(Length::Shrink)
                     .align_items(Align::Start)
-                    .push(Text::new(format!("Cursor position: x = {}, y = {}", self.cursor_position.x, self.cursor_position.y)).size(15).color([0.8, 0.8, 0.8]))
+                    .push(
+                        Text::new(format!(
+                            "Cursor position: x = {}, y = {}",
+                            self.cursor_position.x, self.cursor_position.y
+                        ))
+                        .size(15)
+                        .color([0.8, 0.8, 0.8]),
+                    ),
             )
             .push(
                 Column::new()

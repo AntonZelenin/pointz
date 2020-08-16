@@ -1,5 +1,6 @@
 use iced_wgpu::wgpu;
-use image::GenericImageView;
+use image::{GenericImageView, RgbaImage};
+use std::path::Path;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
@@ -24,7 +25,12 @@ impl Texture {
         img: &image::DynamicImage,
         label: Option<&str>,
     ) -> Result<(Self, wgpu::CommandBuffer), failure::Error> {
-        let rgba = img.as_rgba8().unwrap();
+        let rgba: RgbaImage;
+        if let Some(rgba_image) = img.as_rgba8() {
+            rgba = rgba_image.clone();
+        } else {
+            rgba = img.to_rgba();
+        };
         let dimensions = img.dimensions();
 
         let size = wgpu::Extent3d {
@@ -90,7 +96,11 @@ impl Texture {
         ))
     }
 
-    pub fn create_depth_texture(device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, label: &str) -> Self {
+    pub fn create_depth_texture(
+        device: &wgpu::Device,
+        sc_desc: &wgpu::SwapChainDescriptor,
+        label: &str,
+    ) -> Self {
         let size = wgpu::Extent3d {
             width: sc_desc.width,
             height: sc_desc.height,
@@ -123,6 +133,22 @@ impl Texture {
             compare: wgpu::CompareFunction::LessEqual,
         });
 
-        Self { texture, view, sampler }
+        Self {
+            texture,
+            view,
+            sampler,
+        }
+    }
+
+    pub fn load<P: AsRef<Path>>(
+        device: &wgpu::Device,
+        path: P,
+    ) -> Result<(Self, wgpu::CommandBuffer), failure::Error> {
+        let path_copy = path.as_ref().to_path_buf();
+        let label = path_copy.to_str();
+
+        let img = image::open(path)?;
+        // todo it will crash if label is longer then 64
+        Self::from_image(device, &img, label)
     }
 }

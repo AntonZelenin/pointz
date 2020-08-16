@@ -1804,6 +1804,7 @@ dependencies = [
  "image",
  "log",
  "shaderc",
+ "tobj",
  "winit",
 ]
 
@@ -2413,6 +2414,12 @@ name = "tinyvec"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53953d2d3a5ad81d9f844a32f14ebb121f50b650cd59d0ee2a07cf13c617efed"
+
+[[package]]
+name = "tobj"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6172100cd5b17cdd085c94f261e31101ca31886c86a2337a6687dac6d2fb3cf1"
 
 [[package]]
 name = "toml"
