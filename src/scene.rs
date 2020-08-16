@@ -101,16 +101,16 @@ impl State {
         let index_buffer =
             device.create_buffer_with_data(bytemuck::cast_slice(INDICES), wgpu::BufferUsage::INDEX);
         let camera = Camera::new(
-            Point3::new(0.0, 0.0, 2.0),
-            Deg(-90.0),
+            Point3::new(-30.0, 25.0, 25.0),
             Deg(0.0),
+            Deg(-40.0),
         );
         let projection =
             Projection::new(sc_desc.width, sc_desc.height, Deg(50.0), 0.1, 100.0);
 
         let instances = (0..NUM_ROWS).flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let position = Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
+                let position = Vector3 { x: (x * 6) as f32, y: 0.0, z: (z * 6) as f32 } - INSTANCE_DISPLACEMENT;
                 let rotation = if position.is_zero() {
                     // this is needed so an object at (0, 0, 0) won't get scaled to zero
                     // as Quaternions can effect scale if they're not created correctly

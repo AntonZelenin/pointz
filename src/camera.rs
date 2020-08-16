@@ -103,7 +103,7 @@ impl CameraController {
             1.0
         } else {
             0.0
-        };
+        } * self.speed;
         match key {
             VirtualKeyCode::W | VirtualKeyCode::Up => {
                 self.amount_forward = amount;
