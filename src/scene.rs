@@ -17,7 +17,7 @@ use winit::{
 use winit::event_loop::ControlFlow;
 use std::time::Instant;
 use crate::instance::{Instance, NUM_ROWS, NUM_INSTANCES_PER_ROW, INSTANCE_DISPLACEMENT};
-use cgmath::{Point3, Deg, Quaternion, Vector3, Matrix4};
+use cgmath::{Point3, Deg, Quaternion, Vector3, Matrix4, Rad};
 use cgmath::prelude::*;
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
@@ -40,6 +40,7 @@ pub struct State {
     diffuse_bind_group: wgpu::BindGroup,
 
     instances: Vec<Instance>,
+    instance_buffer: wgpu::Buffer,
 
     index_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
@@ -129,7 +130,7 @@ impl State {
         let instance_buffer_size = instance_data.len() * std::mem::size_of::<Matrix4<f32>>();
         let instance_buffer = device.create_buffer_with_data(
             bytemuck::cast_slice(&instance_data),
-            wgpu::BufferUsage::STORAGE_READ,
+            wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST,
         );
 
         let mut uniforms = Uniforms::new();
@@ -250,6 +251,7 @@ impl State {
             program_state: state,
             diffuse_bind_group,
             instances,
+            instance_buffer,
             vertex_buffer,
             index_buffer,
             uniforms,
@@ -455,6 +457,18 @@ impl State {
             0,
             std::mem::size_of::<Uniforms>() as wgpu::BufferAddress,
         );
+
+        for instance in &mut self.instances {
+            instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
+        }
+        let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        let instance_buffer_size = instance_data.len() * std::mem::size_of::<cgmath::Matrix4<f32>>();
+        let instance_buffer = self.device.create_buffer_with_data(
+            bytemuck::cast_slice(&instance_data),
+            wgpu::BufferUsage::COPY_SRC,
+        );
+        encoder.copy_buffer_to_buffer(&instance_buffer, 0, &self.instance_buffer, 0, instance_buffer_size as wgpu::BufferAddress);
+
         self.queue.submit(&[encoder.finish()]);
     }
 }
