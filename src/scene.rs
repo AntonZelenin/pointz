@@ -71,7 +71,7 @@ pub struct State {
     camera_controller: CameraController,
 
     last_frames_cursor_deltas: Vec<(f64, f64)>,
-    mouse_pressed: bool,
+    camera_mode: bool,
 
     modifiers: ModifiersState,
     cursor_position: PhysicalPosition<f64>,
@@ -232,7 +232,7 @@ impl State {
             projection,
             camera_controller: CameraController::new(4.0, 0.4),
             last_frames_cursor_deltas: Vec::with_capacity(3),
-            mouse_pressed: false,
+            camera_mode: false,
             modifiers: ModifiersState::default(),
             cursor_position: PhysicalPosition::new(0.0, 0.0),
             resized: false,
@@ -306,10 +306,16 @@ impl State {
                         state,
                         ..
                     } => {
-                        self.mouse_pressed = *state == ElementState::Pressed;
+                        self.camera_mode = *state == ElementState::Pressed;
+                        self.window.set_cursor_visible(!self.camera_mode);
                     }
                     WindowEvent::CursorMoved { position, .. } => {
-                        self.cursor_position = *position;
+                        if self.camera_mode {
+                            // make cursor stay at the same place
+                            self.window.set_cursor_position(self.cursor_position).unwrap();
+                        } else {
+                            self.cursor_position = *position;
+                        }
                     }
                     WindowEvent::ModifiersChanged(new_modifiers) => {
                         self.modifiers = *new_modifiers;
@@ -380,7 +386,7 @@ impl State {
                         }
                         self.last_frames_cursor_deltas.push(*delta);
                         let (mouse_dx, mouse_dy) = self.get_avg_cursor_pos();
-                        if self.mouse_pressed {
+                        if self.camera_mode {
                             self.camera_controller.process_mouse(mouse_dx / 2.0, mouse_dy / 2.0);
                         }
                     },
