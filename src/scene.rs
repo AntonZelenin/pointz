@@ -1,9 +1,8 @@
 use crate::camera::{Camera, CameraController, Projection};
-use crate::texture;
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::PipelineLayout;
 use iced_wgpu::{Backend, Renderer, Settings, Viewport};
-use iced_winit::{conversion, futures, winit, Color, program, Debug, Size};
+use iced_winit::{conversion, futures, winit, program, Debug, Size};
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, KeyboardInput, MouseButton, WindowEvent, Event};
 use crate::buffer::Uniforms;
@@ -19,6 +18,7 @@ use std::time::Instant;
 use crate::instance::{Instance, NUM_ROWS, NUM_INSTANCES_PER_ROW, INSTANCE_DISPLACEMENT};
 use cgmath::{Point3, Deg, Quaternion, Vector3, Matrix4, Rad};
 use cgmath::prelude::*;
+use crate::texture::Texture;
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
@@ -30,7 +30,7 @@ pub struct State {
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
 
-    pipeline: wgpu::RenderPipeline,
+    render_pipeline: wgpu::RenderPipeline,
     queue: wgpu::Queue,
     device: wgpu::Device,
     renderer: Renderer,
@@ -38,6 +38,7 @@ pub struct State {
     program_state: program::State<GUI>,
 
     diffuse_bind_group: wgpu::BindGroup,
+    depth_texture: Texture,
 
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
@@ -181,7 +182,7 @@ impl State {
 
         let diffuse_bytes = include_bytes!("textures/pnggradHDrgba.png");
         let (diffuse_texture, cmd_buffer) =
-            texture::Texture::from_bytes(&device, diffuse_bytes, "pnggradHDrgba.png").unwrap();
+            Texture::from_bytes(&device, diffuse_bytes, "pnggradHDrgba.png").unwrap();
         queue.submit(&[cmd_buffer]);
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -238,18 +239,21 @@ impl State {
             &mut debug,
         );
 
+        let depth_texture = Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
+
         State {
             viewport,
             surface,
             window,
             swap_chain,
             sc_desc,
-            pipeline: build_pipeline(&device, &render_pipeline_layout),
+            render_pipeline: build_pipeline(&device, &render_pipeline_layout),
             queue,
             device,
             renderer,
             program_state: state,
             diffuse_bind_group,
+            depth_texture,
             instances,
             instance_buffer,
             vertex_buffer,
@@ -270,34 +274,8 @@ impl State {
         }
     }
 
-    fn clear<'a>(
-        &self,
-        target: &'a wgpu::TextureView,
-        encoder: &'a mut wgpu::CommandEncoder,
-        background_color: Color,
-    ) -> wgpu::RenderPass<'a> {
-        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: target,
-                resolve_target: None,
-                load_op: wgpu::LoadOp::Clear,
-                store_op: wgpu::StoreOp::Store,
-                clear_color: {
-                    let [r, g, b, a] = background_color.into_linear();
-                    wgpu::Color {
-                        r: r as f64,
-                        g: g as f64,
-                        b: b as f64,
-                        a: a as f64,
-                    }
-                },
-            }],
-            depth_stencil_attachment: None,
-        })
-    }
-
     fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
-        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
         render_pass.set_vertex_buffer(0, &self.vertex_buffer, 0, 0);
@@ -309,6 +287,7 @@ impl State {
         self.projection.resize(new_size.width, new_size.height);
         self.sc_desc.width = new_size.width;
         self.sc_desc.height = new_size.height;
+        self.depth_texture = Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
@@ -393,7 +372,32 @@ impl State {
                 let program = self.program_state.program();
                 {
                     let mut render_pass =
-                        self.clear(&frame.view, &mut encoder, program.background_color());
+                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                                attachment: &frame.view,
+                                resolve_target: None,
+                                load_op: wgpu::LoadOp::Clear,
+                                store_op: wgpu::StoreOp::Store,
+                                clear_color: {
+                                    let [r, g, b, a] = program.background_color().into_linear();
+                                    wgpu::Color {
+                                        r: r as f64,
+                                        g: g as f64,
+                                        b: b as f64,
+                                        a: a as f64,
+                                    }
+                                },
+                            }],
+                            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                                attachment: &self.depth_texture.view,
+                                depth_load_op: wgpu::LoadOp::Clear,
+                                depth_store_op: wgpu::StoreOp::Store,
+                                clear_depth: 1.0,
+                                stencil_load_op: wgpu::LoadOp::Clear,
+                                stencil_store_op: wgpu::StoreOp::Store,
+                                clear_stencil: 0,
+                            }),
+                        });
                     self.draw(&mut render_pass);
                 }
                 let mouse_interaction = self.renderer.backend_mut().draw(
@@ -483,7 +487,7 @@ fn build_pipeline(
         device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
     let fs_module =
         device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         layout: render_pipeline_layout,
         vertex_stage: wgpu::ProgrammableStageDescriptor {
             module: &vs_module,
@@ -507,7 +511,15 @@ fn build_pipeline(
             alpha_blend: wgpu::BlendDescriptor::REPLACE,
             write_mask: wgpu::ColorWrite::ALL,
         }],
-        depth_stencil_state: None,
+        depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+            format: Texture::DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
+            stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
+            stencil_read_mask: 0,
+            stencil_write_mask: 0,
+        }),
         vertex_state: wgpu::VertexStateDescriptor {
             index_format: wgpu::IndexFormat::Uint16,
             vertex_buffers: &[Vertex::desc()],
@@ -517,5 +529,5 @@ fn build_pipeline(
         alpha_to_coverage_enabled: false,
     });
 
-    pipeline
+    render_pipeline
 }
