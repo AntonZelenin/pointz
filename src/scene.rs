@@ -24,6 +24,7 @@ pub struct State {
     viewport: Viewport,
     surface: wgpu::Surface,
     window: Window,
+    // todo can be moved to a getter
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
     render_pipeline: wgpu::RenderPipeline,
@@ -128,7 +129,7 @@ impl State {
                 bindings: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX,
+                        visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                     },
                     wgpu::BindGroupLayoutEntry {
@@ -248,8 +249,8 @@ impl State {
                         &light_bind_group_layout,
                     ],
                 });
-            let vs = include_bytes!("shader/my_vert.spv");
-            let fs = include_bytes!("shader/my_frag.spv");
+            let vs = include_bytes!("shader/vert.spv");
+            let fs = include_bytes!("shader/frag.spv");
             let vs_module =
                 device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
             let fs_module =
@@ -257,7 +258,8 @@ impl State {
             build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
         };
 
-        let light_render_pipeline = {
+        let
+            light_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[
                     &uniform_bind_group_layout,
