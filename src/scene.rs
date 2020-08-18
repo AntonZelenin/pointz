@@ -8,7 +8,7 @@ use crate::texture::Texture;
 use cgmath::prelude::*;
 use cgmath::{Deg, Matrix4, Point3, Quaternion, Rad, Vector3};
 use iced_wgpu::wgpu;
-use iced_wgpu::wgpu::PipelineLayout;
+use iced_wgpu::wgpu::{PipelineLayout, ShaderModule};
 use iced_wgpu::{Backend, Renderer, Settings, Viewport};
 use iced_winit::{conversion, futures, program, winit, Debug, Size};
 use std::time::Instant;
@@ -16,6 +16,7 @@ use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::{dpi::PhysicalPosition, event::ModifiersState, window::Window};
+use crate::lighting::{Light, DrawLight};
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
@@ -23,41 +24,34 @@ pub struct State {
     viewport: Viewport,
     surface: wgpu::Surface,
     window: Window,
-
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
-
     render_pipeline: wgpu::RenderPipeline,
     queue: wgpu::Queue,
     device: wgpu::Device,
     renderer: Renderer,
-
     program_state: program::State<GUI>,
-
     depth_texture: Texture,
-
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
-
     obj_model: Model,
-
     uniforms: Uniforms,
     uniform_bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
-
     camera: Camera,
     projection: Projection,
     camera_controller: CameraController,
-
     last_frames_cursor_deltas: Vec<(f64, f64)>,
     camera_mode: bool,
-
     modifiers: ModifiersState,
     cursor_position: PhysicalPosition<f64>,
     resized: bool,
-
     last_render_time: Instant,
     debug: Debug,
+    light: Light,
+    light_buffer: wgpu::Buffer,
+    light_bind_group: wgpu::BindGroup,
+    light_render_pipeline: wgpu::RenderPipeline,
 }
 
 impl State {
@@ -190,10 +184,34 @@ impl State {
                 ],
                 label: Some("texture_bind_group_layout"),
             });
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                bind_group_layouts: &[&uniform_bind_group_layout, &texture_bind_group_layout],
+
+        let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
+        // We'll want to update our lights position, so we use COPY_DST
+        let light_buffer = device.create_buffer_with_data(
+            bytemuck::cast_slice(&[light]),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
+
+        let light_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                bindings: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                }],
+                label: None,
             });
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &light_bind_group_layout,
+            bindings: &[wgpu::Binding {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer {
+                    buffer: &light_buffer,
+                    range: 0..std::mem::size_of_val(&light) as wgpu::BufferAddress,
+                },
+            }],
+            label: None,
+        });
 
         let physical_size = window.inner_size();
         let viewport = Viewport::with_physical_size(
@@ -221,13 +239,52 @@ impl State {
 
         queue.submit(&command_buffers);
 
+        let render_pipeline = {
+            let render_pipeline_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    bind_group_layouts: &[
+                        &uniform_bind_group_layout,
+                        &texture_bind_group_layout,
+                        &light_bind_group_layout,
+                    ],
+                });
+            let vs = include_bytes!("shader/my_vert.spv");
+            let fs = include_bytes!("shader/my_frag.spv");
+            let vs_module =
+                device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
+            let fs_module =
+                device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
+            build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
+        };
+
+        let light_render_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                bind_group_layouts: &[
+                    &uniform_bind_group_layout,
+                    &light_bind_group_layout,
+                ]
+            });
+            let vs = include_bytes!("shader/light_vert.spv");
+            let fs = include_bytes!("shader/light_frag.spv");
+            let vs_module =
+                device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
+            let fs_module =
+                device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
+            build_render_pipeline(
+                &device,
+                &layout,
+                vs_module,
+                fs_module,
+            )
+        };
+
         State {
             viewport,
             surface,
             window,
             swap_chain,
             sc_desc,
-            render_pipeline: build_pipeline(&device, &render_pipeline_layout),
+            render_pipeline,
             queue,
             device,
             renderer,
@@ -249,10 +306,20 @@ impl State {
             resized: false,
             last_render_time: std::time::Instant::now(),
             debug,
+            light,
+            light_buffer,
+            light_bind_group,
+            light_render_pipeline,
         }
     }
 
     fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
+        render_pass.set_pipeline(&self.light_render_pipeline);
+        render_pass.draw_light_model(
+            &self.obj_model,
+            &self.uniform_bind_group,
+            &self.light_bind_group,
+        );
         render_pass.set_pipeline(&self.render_pipeline);
         // let mesh = &self.obj_model.meshes[0];
         // let material = &self.obj_model.materials[mesh.material];
@@ -261,6 +328,7 @@ impl State {
             &self.obj_model,
             0..self.instances.len() as u32,
             &self.uniform_bind_group,
+            &self.light_bind_group,
         );
     }
 
@@ -480,16 +548,12 @@ impl State {
     }
 }
 
-fn build_pipeline(
+fn build_render_pipeline(
     device: &wgpu::Device,
     render_pipeline_layout: &PipelineLayout,
+    vs_module: ShaderModule,
+    fs_module: ShaderModule,
 ) -> wgpu::RenderPipeline {
-    let vs = include_bytes!("shader/my_vert.spv");
-    let fs = include_bytes!("shader/my_frag.spv");
-    let vs_module =
-        device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
-    let fs_module =
-        device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         layout: render_pipeline_layout,
         vertex_stage: wgpu::ProgrammableStageDescriptor {
@@ -532,6 +596,5 @@ fn build_pipeline(
         sample_mask: !0,
         alpha_to_coverage_enabled: false,
     });
-
     render_pipeline
 }

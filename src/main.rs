@@ -8,6 +8,7 @@ mod instance;
 mod model;
 mod scene;
 mod texture;
+mod lighting;
 
 use scene::State;
 use shaderc;
@@ -20,13 +21,13 @@ pub fn main() {
     env_logger::init();
 
     compile_my_shader(
-        "src/shader/my.frag",
-        "src/shader/my_frag.spv",
+        "src/shader/light.frag",
+        "src/shader/light_frag.spv",
         shaderc::ShaderKind::Fragment,
     );
     compile_my_shader(
-        "src/shader/my.vert",
-        "src/shader/my_vert.spv",
+        "src/shader/light.vert",
+        "src/shader/light_vert.spv",
         shaderc::ShaderKind::Vertex,
     );
 
