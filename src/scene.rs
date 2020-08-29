@@ -2,8 +2,8 @@ use crate::buffer::Uniforms;
 use crate::camera::{Camera, CameraController, Projection};
 use crate::controls::GUI;
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
-use crate::model;
-use crate::model::{Vertex, DrawModel, Model};
+use crate::{model, texture};
+use crate::model::{Vertex, DrawModel, Model, Material};
 use crate::texture::Texture;
 use cgmath::prelude::*;
 use cgmath::{Deg, Matrix4, Point3, Quaternion, Rad, Vector3};
@@ -53,6 +53,7 @@ pub struct State {
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
+    debug_material: Material,
 }
 
 impl State {
@@ -295,6 +296,20 @@ impl State {
             )
         };
 
+        let debug_material = {
+            let diffuse_bytes = include_bytes!("../resources/cobble-diffuse.png");
+            let normal_bytes = include_bytes!("../resources/cobble-normal.png");
+
+            let mut command_buffers = vec![];
+            let (diffuse_texture, cmds) = texture::Texture::from_bytes(&device, diffuse_bytes, "res/alt-diffuse.png", false).unwrap();
+            command_buffers.push(cmds);
+            let (normal_texture, cmds) = texture::Texture::from_bytes(&device, normal_bytes, "res/alt-normal.png", true).unwrap();
+            command_buffers.push(cmds);
+            queue.submit(&command_buffers);
+
+            model::Material::new(&device, "alt-material", diffuse_texture, normal_texture, &texture_bind_group_layout)
+        };
+
         State {
             viewport,
             surface,
@@ -327,6 +342,7 @@ impl State {
             light_buffer,
             light_bind_group,
             light_render_pipeline,
+            debug_material,
         }
     }
 
@@ -341,8 +357,9 @@ impl State {
         // let mesh = &self.obj_model.meshes[0];
         // let material = &self.obj_model.materials[mesh.material];
         // render_pass.draw_mesh_instanced(&mesh,  material,0..self.instances.len() as _, &self.uniform_bind_group);
-        render_pass.draw_model_instanced(
+        render_pass.draw_model_instanced_with_material(
             &self.obj_model,
+            &self.debug_material,
             0..self.instances.len() as u32,
             &self.uniform_bind_group,
             &self.light_bind_group,

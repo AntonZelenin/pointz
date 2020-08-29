@@ -15,15 +15,17 @@ impl Texture {
         device: &wgpu::Device,
         bytes: &[u8],
         label: &str,
+        is_normal_map: bool,
     ) -> Result<(Self, wgpu::CommandBuffer), failure::Error> {
         let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, &img, Some(label))
+        Self::from_image(device, &img, Some(label), is_normal_map)
     }
 
     pub fn from_image(
         device: &wgpu::Device,
         img: &image::DynamicImage,
         label: Option<&str>,
+        is_normal_map: bool,
     ) -> Result<(Self, wgpu::CommandBuffer), failure::Error> {
         let rgba: RgbaImage;
         if let Some(rgba_image) = img.as_rgba8() {
@@ -45,7 +47,11 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: if is_normal_map {
+                wgpu::TextureFormat::Rgba8Unorm
+            } else {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            },
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
         });
 
@@ -143,12 +149,13 @@ impl Texture {
     pub fn load<P: AsRef<Path>>(
         device: &wgpu::Device,
         path: P,
+        is_normal_map: bool,
     ) -> Result<(Self, wgpu::CommandBuffer), failure::Error> {
         let path_copy = path.as_ref().to_path_buf();
         let label = path_copy.to_str();
 
         let img = image::open(path)?;
         // todo it will crash if label is longer then 64
-        Self::from_image(device, &img, label)
+        Self::from_image(device, &img, label, is_normal_map)
     }
 }

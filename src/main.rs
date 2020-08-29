@@ -20,26 +20,26 @@ use winit::{event_loop::EventLoop, window::Window};
 pub fn main() {
     env_logger::init();
 
-    // compile_my_shader(
-    //     "src/shader/shader.frag",
-    //     "src/shader/frag.spv",
-    //     shaderc::ShaderKind::Fragment,
-    // );
-    // compile_my_shader(
-    //     "src/shader/shader.vert",
-    //     "src/shader/vert.spv",
-    //     shaderc::ShaderKind::Vertex,
-    // );
-    // compile_my_shader(
-    //     "src/shader/light.vert",
-    //     "src/shader/light_vert.spv",
-    //     shaderc::ShaderKind::Vertex,
-    // );
-    // compile_my_shader(
-    //     "src/shader/light.frag",
-    //     "src/shader/light_frag.spv",
-    //     shaderc::ShaderKind::Fragment,
-    // );
+    compile_my_shader(
+        "src/shader/shader.frag",
+        "src/shader/frag.spv",
+        shaderc::ShaderKind::Fragment,
+    );
+    compile_my_shader(
+        "src/shader/shader.vert",
+        "src/shader/vert.spv",
+        shaderc::ShaderKind::Vertex,
+    );
+    compile_my_shader(
+        "src/shader/light.vert",
+        "src/shader/light_vert.spv",
+        shaderc::ShaderKind::Vertex,
+    );
+    compile_my_shader(
+        "src/shader/light.frag",
+        "src/shader/light_frag.spv",
+        shaderc::ShaderKind::Fragment,
+    );
 
     let event_loop = EventLoop::new();
     let window = Window::new(&event_loop).unwrap();
