@@ -78,8 +78,8 @@ impl<'a, 'b> DrawLight<'a, 'b> for wgpu::RenderPass<'a>
         uniforms: &'b wgpu::BindGroup,
         light: &'b wgpu::BindGroup,
     ) {
-        self.set_vertex_buffer(0, &mesh.vertex_buffer, 0, 0);
-        self.set_index_buffer(&mesh.index_buffer, 0, 0);
+        self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+        self.set_index_buffer(mesh.index_buffer.slice(..));
         self.set_bind_group(0, uniforms, &[]);
         self.set_bind_group(1, light, &[]);
         self.draw_indexed(0..mesh.num_elements, 0, instances);

@@ -7,6 +7,7 @@ use crate::model::{Vertex, DrawModel, Model, Material};
 use crate::texture::Texture;
 use cgmath::prelude::*;
 use cgmath::{Deg, Matrix4, Point3, Quaternion, Rad, Vector3};
+#[macro_use]
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::{PipelineLayout, ShaderModule};
 use iced_wgpu::{Backend, Renderer, Settings, Viewport};
@@ -17,6 +18,7 @@ use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, MouseButton,
 use winit::event_loop::ControlFlow;
 use winit::{dpi::PhysicalPosition, event::ModifiersState, window::Window};
 use crate::lighting::{Light, DrawLight};
+use iced_wgpu::wgpu::util::DeviceExt;
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
@@ -58,26 +60,29 @@ pub struct State {
 
 impl State {
     pub fn new(window: winit::window::Window) -> State {
-        let surface = wgpu::Surface::create(&window);
+        let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+        let surface = unsafe { instance.create_surface(&window) };
         let (mut device, queue) = futures::executor::block_on(async {
-            let adapter = wgpu::Adapter::request(
+            let adapter = instance.request_adapter(
                 &wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::Default,
                     compatible_surface: Some(&surface),
                 },
-                wgpu::BackendBit::PRIMARY,
             )
-            .await
-            .expect("Request adapter");
+                .await
+                .expect("Request adapter");
 
             adapter
-                .request_device(&wgpu::DeviceDescriptor {
-                    extensions: wgpu::Extensions {
-                        anisotropic_filtering: false,
+                .request_device(
+                    &wgpu::DeviceDescriptor {
+                        features: wgpu::Features::empty(),
+                        limits: wgpu::Limits::default(),
+                        shader_validation: true,
                     },
-                    limits: wgpu::Limits::default(),
-                })
+                    None,
+                )
                 .await
+                .expect("Failed to create device")
         });
         let size = window.inner_size();
         let sc_desc = wgpu::SwapChainDescriptor {
@@ -114,24 +119,33 @@ impl State {
 
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
         let instance_buffer_size = instance_data.len() * std::mem::size_of::<Matrix4<f32>>();
-        let instance_buffer = device.create_buffer_with_data(
-            bytemuck::cast_slice(&instance_data),
-            wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST,
-        );
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            contents: bytemuck::cast_slice(&instance_data),
+            // usage: wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST,
+            // todo MAP_READ?
+            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
+            label: Some("instance buffer"),
+        });
 
         let mut uniforms = Uniforms::new();
         uniforms.update_view_proj(&camera, &projection);
-        let uniform_buffer = device.create_buffer_with_data(
-            bytemuck::cast_slice(&[uniforms]),
-            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        );
+        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            contents: bytemuck::cast_slice(&[uniforms]),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            label: Some("uniform buffer"),
+        });
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[
+                entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                        ty: wgpu::BindingType::UniformBuffer {
+                            dynamic: false,
+                            // todo bind size everywhere
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
@@ -139,27 +153,23 @@ impl State {
                         ty: wgpu::BindingType::StorageBuffer {
                             dynamic: false,
                             readonly: true,
+                            min_binding_size: None,
                         },
+                        count: None,
                     },
                 ],
                 label: Some("uniform_bind_group_layout"),
             });
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &uniform_bind_group_layout,
-            bindings: &[
-                wgpu::Binding {
+            entries: &[
+                wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &uniform_buffer,
-                        range: 0..std::mem::size_of_val(&uniforms) as wgpu::BufferAddress,
-                    },
+                    resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
                 },
-                wgpu::Binding {
+                wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &instance_buffer,
-                        range: 0..instance_buffer_size as wgpu::BufferAddress,
-                    },
+                    resource: wgpu::BindingResource::Buffer(instance_buffer.slice(..)),
                 },
             ],
             label: Some("uniform_bind_group"),
@@ -167,7 +177,7 @@ impl State {
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[
+                entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
@@ -177,11 +187,13 @@ impl State {
                             component_type: wgpu::TextureComponentType::Float,
                             dimension: wgpu::TextureViewDimension::D2,
                         },
+                        count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::Sampler { comparison: false },
+                        count: None,
                     },
                     // normal map
                     wgpu::BindGroupLayoutEntry {
@@ -192,11 +204,13 @@ impl State {
                             component_type: wgpu::TextureComponentType::Float,
                             dimension: wgpu::TextureViewDimension::D2,
                         },
+                        count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 3,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::Sampler { comparison: false },
+                        count: None,
                     },
                 ],
                 label: Some("texture_bind_group_layout"),
@@ -204,28 +218,30 @@ impl State {
 
         let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
         // We'll want to update our lights position, so we use COPY_DST
-        let light_buffer = device.create_buffer_with_data(
-            bytemuck::cast_slice(&[light]),
-            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        );
+        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            contents: bytemuck::cast_slice(&[light]),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            label: Some("light buffer"),
+        });
 
         let light_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &[wgpu::BindGroupLayoutEntry {
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                    ty: wgpu::BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 }],
                 label: None,
             });
         let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &light_bind_group_layout,
-            bindings: &[wgpu::Binding {
+            entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer {
-                    buffer: &light_buffer,
-                    range: 0..std::mem::size_of_val(&light) as wgpu::BufferAddress,
-                },
+                resource: wgpu::BindingResource::Buffer(light_buffer.slice(..)),
             }],
             label: None,
         });
@@ -254,7 +270,7 @@ impl State {
             "resources/cube.obj",
         ).unwrap();
 
-        queue.submit(&command_buffers);
+        queue.submit(command_buffers);
 
         let render_pipeline = {
             let render_pipeline_layout =
@@ -264,30 +280,30 @@ impl State {
                         &texture_bind_group_layout,
                         &light_bind_group_layout,
                     ],
+                    label: Some("main"),
+                    push_constant_ranges: &[],
                 });
-            let vs = include_bytes!("shader/vert.spv");
-            let fs = include_bytes!("shader/frag.spv");
             let vs_module =
-                device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
+                device.create_shader_module(wgpu::include_spirv!("shader/vert.spv"));
             let fs_module =
-                device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
+                device.create_shader_module(wgpu::include_spirv!("shader/frag.spv"));
             build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
         };
 
         let
             light_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("light pipeline"),
                 bind_group_layouts: &[
                     &uniform_bind_group_layout,
                     &light_bind_group_layout,
-                ]
+                ],
+                push_constant_ranges: &[],
             });
-            let vs = include_bytes!("shader/light_vert.spv");
-            let fs = include_bytes!("shader/light_frag.spv");
             let vs_module =
-                device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&vs[..])).unwrap());
+                device.create_shader_module(wgpu::include_spirv!("shader/light_vert.spv"));
             let fs_module =
-                device.create_shader_module(&wgpu::read_spirv(std::io::Cursor::new(&fs[..])).unwrap());
+                device.create_shader_module(wgpu::include_spirv!("shader/light_frag.spv"));
             build_render_pipeline(
                 &device,
                 &layout,
@@ -305,7 +321,7 @@ impl State {
             command_buffers.push(cmds);
             let (normal_texture, cmds) = texture::Texture::from_bytes(&device, normal_bytes, "res/alt-normal.png", true).unwrap();
             command_buffers.push(cmds);
-            queue.submit(&command_buffers);
+            queue.submit(command_buffers);
 
             model::Material::new(&device, "alt-material", diffuse_texture, normal_texture, &texture_bind_group_layout)
         };
@@ -381,11 +397,11 @@ impl State {
                 match event {
                     WindowEvent::KeyboardInput {
                         input:
-                            KeyboardInput {
-                                virtual_keycode: Some(key),
-                                state,
-                                ..
-                            },
+                        KeyboardInput {
+                            virtual_keycode: Some(key),
+                            state,
+                            ..
+                        },
                         ..
                     } => {
                         self.camera_controller.process_keyboard(*key, *state);
@@ -458,7 +474,7 @@ impl State {
                     self.resize(self.window.inner_size());
                     self.resized = false;
                 }
-                let frame = self.swap_chain.get_next_texture().expect("Next frame");
+                let frame = self.swap_chain.get_current_frame().expect("Next frame");
                 let mut encoder = self
                     .device
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -466,43 +482,49 @@ impl State {
                 {
                     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                            attachment: &frame.view,
+                            attachment: &frame.output.view,
                             resolve_target: None,
-                            load_op: wgpu::LoadOp::Clear,
-                            store_op: wgpu::StoreOp::Store,
-                            clear_color: {
+                            ops: {
                                 let [r, g, b, a] = program.background_color().into_linear();
-                                wgpu::Color {
-                                    r: r as f64,
-                                    g: g as f64,
-                                    b: b as f64,
-                                    a: a as f64,
+                                wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                                        r: r as f64,
+                                        g: g as f64,
+                                        b: b as f64,
+                                        a: a as f64,
+                                    }),
+                                    store: true,
                                 }
                             },
                         }],
                         depth_stencil_attachment: Some(
                             wgpu::RenderPassDepthStencilAttachmentDescriptor {
                                 attachment: &self.depth_texture.view,
-                                depth_load_op: wgpu::LoadOp::Clear,
-                                depth_store_op: wgpu::StoreOp::Store,
-                                clear_depth: 1.0,
-                                stencil_load_op: wgpu::LoadOp::Clear,
-                                stencil_store_op: wgpu::StoreOp::Store,
-                                clear_stencil: 0,
+                                depth_ops: Some(wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(1.0),
+                                    store: true,
+                                }),
+                                stencil_ops: Some(wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(0),
+                                    store: true,
+                                }),
                             },
                         ),
                     });
                     self.draw(&mut render_pass);
                 }
+                // todo what is this?
+                let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
                 let mouse_interaction = self.renderer.backend_mut().draw(
                     &mut self.device,
+                    &mut staging_belt,
                     &mut encoder,
-                    &frame.view,
+                    &frame.output.view,
                     &self.viewport,
                     self.program_state.primitive(),
                     &self.debug.overlay(),
                 );
-                self.queue.submit(&[encoder.finish()]);
+                self.queue.submit(Some(encoder.finish()));
                 self.window
                     .set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
             }
@@ -544,10 +566,11 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("update encoder"),
             });
-        let staging_buffer = self.device.create_buffer_with_data(
-            bytemuck::cast_slice(&[self.uniforms]),
-            wgpu::BufferUsage::COPY_SRC,
-        );
+        let staging_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            contents: bytemuck::cast_slice(&[self.uniforms]),
+            usage: wgpu::BufferUsage::COPY_SRC,
+            label: Some("staging buffer"),
+        });
         encoder.copy_buffer_to_buffer(
             &staging_buffer,
             0,
@@ -566,10 +589,11 @@ impl State {
             .collect::<Vec<_>>();
         let instance_buffer_size =
             instance_data.len() * std::mem::size_of::<cgmath::Matrix4<f32>>();
-        let instance_buffer = self.device.create_buffer_with_data(
-            bytemuck::cast_slice(&instance_data),
-            wgpu::BufferUsage::COPY_SRC,
-        );
+        let instance_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsage::COPY_SRC,
+            label: Some("instance buffer"),
+        });
         encoder.copy_buffer_to_buffer(
             &instance_buffer,
             0,
@@ -578,7 +602,7 @@ impl State {
             instance_buffer_size as wgpu::BufferAddress,
         );
 
-        self.queue.submit(&[encoder.finish()]);
+        self.queue.submit(Some(encoder.finish()));
     }
 }
 
@@ -589,7 +613,8 @@ fn build_render_pipeline(
     fs_module: ShaderModule,
 ) -> wgpu::RenderPipeline {
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        layout: render_pipeline_layout,
+        label: Some("main"),
+        layout: Some(render_pipeline_layout),
         vertex_stage: wgpu::ProgrammableStageDescriptor {
             module: &vs_module,
             entry_point: "main",
@@ -605,6 +630,7 @@ fn build_render_pipeline(
             depth_bias: 0,
             depth_bias_slope_scale: 0.0,
             depth_bias_clamp: 0.0,
+            ..Default::default()
         }),
         primitive_topology: wgpu::PrimitiveTopology::TriangleList,
         color_states: &[wgpu::ColorStateDescriptor {
@@ -617,10 +643,7 @@ fn build_render_pipeline(
             format: Texture::DEPTH_FORMAT,
             depth_write_enabled: true,
             depth_compare: wgpu::CompareFunction::Less,
-            stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
-            stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
-            stencil_read_mask: 0,
-            stencil_write_mask: 0,
+            stencil: wgpu::StencilStateDescriptor::default(),
         }),
         vertex_state: wgpu::VertexStateDescriptor {
             index_format: wgpu::IndexFormat::Uint32,
