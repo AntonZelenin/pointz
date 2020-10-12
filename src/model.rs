@@ -1,3 +1,4 @@
+use anyhow::*;
 use crate::texture;
 use iced_wgpu::wgpu;
 use std::ops::Range;
@@ -16,27 +17,22 @@ pub struct Model {
 impl Model {
     pub fn load<P: AsRef<Path>>(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         layout: &wgpu::BindGroupLayout,
         path: P,
-    ) -> Result<(Self, Vec<wgpu::CommandBuffer>), failure::Error> {
-        // todo triangulate faces?
+    ) -> Result<Self> {
         let (obj_models, obj_materials) = tobj::load_obj(path.as_ref(), true)?;
 
         // We're assuming that the texture files are stored with the obj file
         let containing_folder = path.as_ref().parent().unwrap();
 
-        // Our `Texture` struct currently returns a `CommandBuffer` when it's created so we need to collect those and return them.
-        let mut command_buffers = Vec::new();
-
         let mut materials = Vec::new();
         for mat in obj_materials {
             let diffuse_path = mat.diffuse_texture;
-            let (diffuse_texture, cmds) = texture::Texture::load(device, containing_folder.join(diffuse_path), false)?;
-            command_buffers.push(cmds);
+            let diffuse_texture = texture::Texture::load(device, queue, containing_folder.join(diffuse_path), false)?;
 
             let normal_path = mat.normal_texture;
-            let (normal_texture, cmds) = texture::Texture::load(device, containing_folder.join(normal_path), true)?;
-            command_buffers.push(cmds);
+            let normal_texture = texture::Texture::load(device, queue, containing_folder.join(normal_path), true)?;
 
             materials.push(Material::new(
                 device,
@@ -120,12 +116,13 @@ impl Model {
                 usage: wgpu::BufferUsage::VERTEX,
                 label: Some("vertex buffer"),
             });
+            println!("2 {:?}", vertex_buffer);
             let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 contents: bytemuck::cast_slice(&m.mesh.indices),
                 usage: wgpu::BufferUsage::INDEX,
                 label: Some("index buffer"),
             });
-
+            println!("3 {:?}", index_buffer);
             meshes.push(Mesh {
                 name: m.name,
                 vertex_buffer,
@@ -135,7 +132,7 @@ impl Model {
             });
         }
 
-        Ok((Self { meshes, materials }, command_buffers))
+        Ok(Self { meshes, materials })
     }
 }
 

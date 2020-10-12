@@ -1,7 +1,7 @@
+use anyhow::*;
 use iced_wgpu::wgpu;
-use image::{GenericImageView, RgbaImage};
+use image::{GenericImageView};
 use std::path::Path;
-use iced_wgpu::wgpu::util::DeviceExt;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
@@ -14,27 +14,24 @@ impl Texture {
 
     pub fn from_bytes(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         bytes: &[u8],
         label: &str,
         is_normal_map: bool,
-    ) -> Result<(Self, wgpu::CommandBuffer), failure::Error> {
+    ) -> Result<Self> {
         let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, &img, Some(label), is_normal_map)
+        Self::from_image(device, queue, &img, Some(label), is_normal_map)
     }
 
     pub fn from_image(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         img: &image::DynamicImage,
         label: Option<&str>,
         is_normal_map: bool,
-    ) -> Result<(Self, wgpu::CommandBuffer), failure::Error> {
-        let rgba: RgbaImage;
-        if let Some(rgba_image) = img.as_rgba8() {
-            rgba = rgba_image.clone();
-        } else {
-            rgba = img.to_rgba();
-        };
+    ) -> Result<Self> {
         let dimensions = img.dimensions();
+        let rgba = img.to_rgba();
 
         let size = wgpu::Extent3d {
             width: dimensions.0,
@@ -55,57 +52,37 @@ impl Texture {
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
         });
 
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            contents: &rgba,
-            usage: wgpu::BufferUsage::COPY_SRC,
-            label: Some("maybe image buffer")
-        });
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("texture_buffer_copy_encoder"),
-        });
-
-        encoder.copy_buffer_to_texture(
-            wgpu::BufferCopyView {
-                buffer: &buffer,
-                layout: wgpu::TextureDataLayout {
-                    offset: 0,
-                    bytes_per_row: 4 * dimensions.0,
-                    rows_per_image: dimensions.1,
-                }
-            },
+        queue.write_texture(
             wgpu::TextureCopyView {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
+            &rgba,
+            wgpu::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: 4 * dimensions.0,
+                rows_per_image: dimensions.1,
+            },
             size,
         );
 
-        let cmd_buffer = encoder.finish();
-
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::MirrorRepeat,
-            address_mode_v: wgpu::AddressMode::MirrorRepeat,
-            address_mode_w: wgpu::AddressMode::MirrorRepeat,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
-            lod_min_clamp: -100.0,
-            lod_max_clamp: 100.0,
-            compare: Some(wgpu::CompareFunction::Always),
             ..Default::default()
         });
 
-        Ok((
-            Self {
-                texture,
-                view,
-                sampler,
-            },
-            cmd_buffer,
-        ))
+        Ok(Self {
+            texture,
+            view,
+            sampler,
+        })
     }
 
     pub fn create_depth_texture(
@@ -154,14 +131,15 @@ impl Texture {
 
     pub fn load<P: AsRef<Path>>(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         path: P,
         is_normal_map: bool,
-    ) -> Result<(Self, wgpu::CommandBuffer), failure::Error> {
+    ) -> Result<Self> {
         let path_copy = path.as_ref().to_path_buf();
         let label = path_copy.to_str();
 
         let img = image::open(path)?;
         // todo it will crash if label is longer then 64
-        Self::from_image(device, &img, label, is_normal_map)
+        Self::from_image(device, queue, &img, label, is_normal_map)
     }
 }
