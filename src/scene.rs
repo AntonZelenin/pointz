@@ -3,12 +3,11 @@ use crate::buffer::Uniforms;
 use crate::camera::{Camera, CameraController, Projection};
 use crate::controls::GUI;
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
-use crate::{model, texture};
-use crate::model::{Vertex, DrawModel, Model, Material};
+use crate::model;
+use crate::model::{Vertex, DrawModel, Model};
 use crate::texture::Texture;
 use cgmath::prelude::*;
 use cgmath::{Deg, Point3, Quaternion, Rad, Vector3};
-// #[macro_use]
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::{PipelineLayout, ShaderModule};
 use iced_wgpu::{Backend, Renderer, Settings, Viewport};
@@ -52,11 +51,8 @@ pub struct State {
     resized: bool,
     last_render_time: Instant,
     debug: Debug,
-    light: Light,
-    light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
-    debug_material: Material,
 }
 
 impl State {
@@ -122,7 +118,7 @@ impl State {
         // let instance_buffer_size = instance_data.len() * std::mem::size_of::<Matrix4<f32>>();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsage::STORAGE,
+            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
             label: Some("instance buffer"),
         });
         println!("4 {:?}", instance_buffer);
@@ -313,20 +309,6 @@ impl State {
             )
         };
 
-        let debug_material = {
-            let diffuse_bytes = include_bytes!("../resources/cobble-diffuse.png");
-            let normal_bytes = include_bytes!("../resources/cobble-normal.png");
-
-            // let mut command_buffers = vec![];
-            let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "res/alt-diffuse.png", false).unwrap();
-            // command_buffers.push(cmds);
-            let normal_texture = texture::Texture::from_bytes(&device, &queue, normal_bytes, "res/alt-normal.png", true).unwrap();
-            // command_buffers.push(cmds);
-            // queue.submit(command_buffers);
-
-            model::Material::new(&device, "alt-material", diffuse_texture, normal_texture, &texture_bind_group_layout)
-        };
-
         State {
             viewport,
             surface,
@@ -355,32 +337,9 @@ impl State {
             resized: false,
             last_render_time: std::time::Instant::now(),
             debug,
-            light,
-            light_buffer,
             light_bind_group,
             light_render_pipeline,
-            debug_material,
         }
-    }
-
-    fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
-        render_pass.set_pipeline(&self.light_render_pipeline);
-        render_pass.draw_light_model(
-            &self.obj_model,
-            &self.uniform_bind_group,
-            &self.light_bind_group,
-        );
-        render_pass.set_pipeline(&self.render_pipeline);
-        // let mesh = &self.obj_model.meshes[0];
-        // let material = &self.obj_model.materials[mesh.material];
-        // render_pass.draw_mesh_instanced(&mesh,  material,0..self.instances.len() as _, &self.uniform_bind_group);
-        render_pass.draw_model_instanced_with_material(
-            &self.obj_model,
-            &self.debug_material,
-            0..self.instances.len() as u32,
-            &self.uniform_bind_group,
-            &self.light_bind_group,
-        );
     }
 
     fn resize(&mut self, new_size: PhysicalSize<u32>) {
@@ -471,65 +430,11 @@ impl State {
                 let dt = now - self.last_render_time;
                 self.last_render_time = now;
                 self.update(dt);
-                self.render2();
-                // хехехе, я закомментил вот этот кусок и стало работать)
-                // if self.resized {
-                //     self.resize(self.window.inner_size());
-                //     self.resized = false;
-                // }
-                // let frame = self.swap_chain.get_current_frame().expect("Next frame");
-                // let mut encoder = self
-                //     .device
-                //     .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-                // let program = self.program_state.program();
-                // {
-                //     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                //         color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                //             attachment: &frame.output.view,
-                //             resolve_target: None,
-                //             ops: {
-                //                 let [r, g, b, a] = program.background_color().into_linear();
-                //                 wgpu::Operations {
-                //                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                //                         r: r as f64,
-                //                         g: g as f64,
-                //                         b: b as f64,
-                //                         a: a as f64,
-                //                     }),
-                //                     store: true,
-                //                 }
-                //             },
-                //         }],
-                //         depth_stencil_attachment: Some(
-                //             wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                //                 attachment: &self.depth_texture.view,
-                //                 depth_ops: Some(wgpu::Operations {
-                //                     load: wgpu::LoadOp::Clear(1.0),
-                //                     store: true,
-                //                 }),
-                //                 stencil_ops: Some(wgpu::Operations {
-                //                     load: wgpu::LoadOp::Clear(0),
-                //                     store: true,
-                //                 }),
-                //             },
-                //         ),
-                //     });
-                //     self.draw(&mut render_pass);
-                // }
-                // // todo what is this?
-                // let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
-                // let mouse_interaction = self.renderer.backend_mut().draw(
-                //     &mut self.device,
-                //     &mut staging_belt,
-                //     &mut encoder,
-                //     &frame.output.view,
-                //     &self.viewport,
-                //     self.program_state.primitive(),
-                //     &self.debug.overlay(),
-                // );
-                // self.queue.submit(iter::once(encoder.finish()));
-                // self.window
-                //     .set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
+                if self.resized {
+                    self.resize(self.window.inner_size());
+                    self.resized = false;
+                }
+                self.render();
             }
             Event::DeviceEvent { event, .. } => match event {
                 DeviceEvent::MouseMotion { delta } => {
@@ -560,7 +465,7 @@ impl State {
         (avg_dx / size, avg_dy / size)
     }
 
-    fn render2(&mut self) {
+    fn render(&mut self) {
         let frame = self
             .swap_chain
             .get_current_frame()
@@ -594,7 +499,11 @@ impl State {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
                     }),
-                    stencil_ops: None,
+                    // stencil_ops: None,
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0),
+                        store: true,
+                    }),
                 }),
             });
 
@@ -613,57 +522,44 @@ impl State {
                 &self.light_bind_group,
             );
         }
+        // let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
+        // let mouse_interaction = self.renderer.backend_mut().draw(
+        //     &mut self.device,
+        //     &mut staging_belt,
+        //     &mut encoder,
+        //     &frame.view,
+        //     &self.viewport,
+        //     self.program_state.primitive(),
+        //     &self.debug.overlay(),
+        // );
+        // self.window
+        //     .set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
         self.queue.submit(iter::once(encoder.finish()));
     }
 
     fn update(&mut self, dt: std::time::Duration) {
         self.camera_controller.update_camera(&mut self.camera, dt);
-        self.uniforms
-            .update_view_proj(&self.camera, &self.projection);
-        // let mut encoder = self
-        //     .device
-        //     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        //         label: Some("update encoder"),
-        //     });
-        // let staging_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        //     contents: bytemuck::cast_slice(&[self.uniforms]),
-        //     usage: wgpu::BufferUsage::COPY_SRC,
-        //     label: Some("staging buffer"),
-        // });
-        // encoder.copy_buffer_to_buffer(
-        //     &staging_buffer,
-        //     0,
-        //     &self.uniform_buffer,
-        //     0,
-        //     std::mem::size_of::<Uniforms>() as wgpu::BufferAddress,
-        // );
+        self.uniforms.update_view_proj(&self.camera, &self.projection);
+        self.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.uniforms]),
+        );
         self.queue.write_buffer(&self.uniform_buffer, 0, &bytemuck::cast_slice(&[self.uniforms]));
 
         for instance in &mut self.instances {
             instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
         }
-        // let instance_data = self
-        //     .instances
-        //     .iter()
-        //     .map(Instance::to_raw)
-        //     .collect::<Vec<_>>();
-        // let instance_buffer_size =
-        //     instance_data.len() * std::mem::size_of::<cgmath::Matrix4<f32>>();
-        // let instance_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        //     contents: bytemuck::cast_slice(&instance_data),
-        //     // usage: wgpu::BufferUsage::COPY_SRC,
-        //     usage: wgpu::BufferUsage::STORAGE,
-        //     label: Some("instance buffer"),
-        // });
-        // encoder.copy_buffer_to_buffer(
-        //     &instance_buffer,
-        //     0,
-        //     &self.instance_buffer,
-        //     0,
-        //     instance_buffer_size as wgpu::BufferAddress,
-        // );
-
-        // self.queue.submit(Some(encoder.finish()));
+        let instance_data = self
+            .instances
+            .iter()
+            .map(Instance::to_raw)
+            .collect::<Vec<_>>();
+        self.queue.write_buffer(
+            &self.instance_buffer,
+            0,
+            bytemuck::cast_slice(&instance_data),
+        );
     }
 }
 
