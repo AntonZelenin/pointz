@@ -2,7 +2,7 @@ use iced_wgpu::Renderer;
 use iced_winit::{
     button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text,
 };
-use winit::dpi::PhysicalPosition;
+use iced_winit::winit::dpi::PhysicalPosition;
 
 pub struct GUI {
     background_color: Color,
