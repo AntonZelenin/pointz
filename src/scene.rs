@@ -115,7 +115,6 @@ impl State {
             .collect::<Vec<_>>();
 
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        // let instance_buffer_size = instance_data.len() * std::mem::size_of::<Matrix4<f32>>();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&instance_data),
             usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
@@ -138,7 +137,6 @@ impl State {
                         visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::UniformBuffer {
                             dynamic: false,
-                            // todo bind size everywhere
                             min_binding_size: None,
                         },
                         count: None,
@@ -179,7 +177,6 @@ impl State {
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::SampledTexture {
                             multisampled: false,
-                            // component_type: wgpu::TextureComponentType::Uint,
                             component_type: wgpu::TextureComponentType::Float,
                             dimension: wgpu::TextureViewDimension::D2,
                         },
@@ -266,8 +263,6 @@ impl State {
             &texture_bind_group_layout,
             "resources/cube.obj",
         ).unwrap();
-
-        // queue.submit(command_buffers);
 
         let render_pipeline = {
             let render_pipeline_layout =
@@ -484,12 +479,15 @@ impl State {
                     attachment: &frame.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: {
+                            let [r, g, b, a] = self.program_state.program().background_color().into_linear();
+                            wgpu::LoadOp::Clear(wgpu::Color {
+                                r: r as f64,
+                                g: g as f64,
+                                b: b as f64,
+                                a: a as f64,
+                            })
+                        },
                         store: true,
                     },
                 }],
@@ -499,7 +497,6 @@ impl State {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
                     }),
-                    // stencil_ops: None,
                     stencil_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(0),
                         store: true,
@@ -522,18 +519,19 @@ impl State {
                 &self.light_bind_group,
             );
         }
-        // let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
-        // let mouse_interaction = self.renderer.backend_mut().draw(
-        //     &mut self.device,
-        //     &mut staging_belt,
-        //     &mut encoder,
-        //     &frame.view,
-        //     &self.viewport,
-        //     self.program_state.primitive(),
-        //     &self.debug.overlay(),
-        // );
-        // self.window
-        //     .set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
+        let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
+        let mouse_interaction = self.renderer.backend_mut().draw(
+            &mut self.device,
+            &mut staging_belt,
+            &mut encoder,
+            &frame.view,
+            &self.viewport,
+            self.program_state.primitive(),
+            &self.debug.overlay(),
+        );
+        self.window
+            .set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
+        staging_belt.finish();
         self.queue.submit(iter::once(encoder.finish()));
     }
 
@@ -582,7 +580,6 @@ fn build_render_pipeline(
         }),
         rasterization_state: Some(wgpu::RasterizationStateDescriptor {
             front_face: wgpu::FrontFace::Ccw,
-            // cull_mode: wgpu::CullMode::None,
             cull_mode: wgpu::CullMode::Back,
             depth_bias: 0,
             depth_bias_slope_scale: 0.0,

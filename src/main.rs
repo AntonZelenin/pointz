@@ -15,7 +15,7 @@ use shaderc;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use winit::{event_loop::EventLoop, window::Window};
+use iced_winit::winit::{event_loop::EventLoop, window::Window};
 
 pub fn main() {
     env_logger::init();
