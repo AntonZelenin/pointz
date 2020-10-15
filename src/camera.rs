@@ -2,7 +2,6 @@ use cgmath::*;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
 use iced_winit::winit;
-use winit::dpi::LogicalPosition;
 use winit::event::*;
 use iced_winit::winit::dpi::PhysicalPosition;
 

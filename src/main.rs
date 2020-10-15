@@ -1,4 +1,3 @@
-// #[macro_use]
 extern crate log;
 
 mod buffer;
@@ -9,6 +8,7 @@ mod model;
 mod scene;
 mod texture;
 mod lighting;
+mod widgets;
 
 use scene::State;
 use shaderc;
@@ -56,7 +56,6 @@ fn compile_my_shader(path: &str, out: &str, shader_type: shaderc::ShaderKind) {
         .compile_into_spirv(
             &source,
             shader_type,
-            // "shader.frag",
             path,
             "main",
             Some(&options),

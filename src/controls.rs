@@ -7,12 +7,14 @@ use iced_winit::winit::dpi::PhysicalPosition;
 pub struct GUI {
     background_color: Color,
     buttons: [button::State; 1],
+    fps: i32,
     pub cursor_position: PhysicalPosition<f64>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     ChangeBackgroundColor,
+    UpdateFps(i32),
 }
 
 impl GUI {
@@ -20,6 +22,7 @@ impl GUI {
         GUI {
             background_color: Color::BLACK,
             buttons: Default::default(),
+            fps: 0,
             cursor_position: PhysicalPosition::new(0.0, 0.0),
         }
     }
@@ -41,6 +44,9 @@ impl Program for GUI {
                 } else {
                     Color::BLACK
                 };
+            },
+            Message::UpdateFps(val) => {
+                self.fps = val;
             }
         }
         Command::none()
@@ -56,11 +62,8 @@ impl Program for GUI {
                     .width(Length::Shrink)
                     .align_items(Align::Start)
                     .push(
-                        Text::new(format!(
-                            "Cursor position: x = {}, y = {}",
-                            self.cursor_position.x, self.cursor_position.y
-                        ))
-                        .size(15)
+                        Text::new(self.fps.to_string())
+                        .size(30)
                         .color([0.8, 0.8, 0.8]),
                     ),
             )

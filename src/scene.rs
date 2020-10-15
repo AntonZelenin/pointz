@@ -1,7 +1,7 @@
 use std::iter;
 use crate::buffer::Uniforms;
 use crate::camera::{Camera, CameraController, Projection};
-use crate::controls::GUI;
+use crate::controls::{GUI, Message};
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::model;
 use crate::model::{Vertex, DrawModel, Model};
@@ -19,6 +19,7 @@ use winit::event_loop::ControlFlow;
 use winit::{dpi::PhysicalPosition, event::ModifiersState, window::Window};
 use crate::lighting::{Light, DrawLight};
 use iced_wgpu::wgpu::util::DeviceExt;
+use crate::widgets::fps;
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
@@ -53,6 +54,8 @@ pub struct State {
     debug: Debug,
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
+
+    fps_meter: fps::Meter,
 }
 
 impl State {
@@ -334,6 +337,7 @@ impl State {
             debug,
             light_bind_group,
             light_render_pipeline,
+            fps_meter: fps::Meter::new(),
         }
     }
 
@@ -558,6 +562,8 @@ impl State {
             0,
             bytemuck::cast_slice(&instance_data),
         );
+        self.fps_meter.push(dt);
+        self.program_state.queue_message(Message::UpdateFps(self.fps_meter.get_average()));
     }
 }
 
