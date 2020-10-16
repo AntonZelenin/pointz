@@ -123,7 +123,6 @@ impl State {
             usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
             label: Some("instance buffer"),
         });
-        println!("4 {:?}", instance_buffer);
         let mut uniforms = Uniforms::new();
         uniforms.update_view_proj(&camera, &projection);
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -131,7 +130,6 @@ impl State {
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             label: Some("uniform buffer"),
         });
-        println!("5 {:?}", uniform_buffer);
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -219,7 +217,6 @@ impl State {
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             label: Some("light buffer"),
         });
-        println!("6 {:?}", light_buffer);
         let light_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
