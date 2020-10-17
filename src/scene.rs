@@ -27,7 +27,6 @@ pub struct State {
     viewport: Viewport,
     surface: wgpu::Surface,
     window: Window,
-    // todo can be moved to a getter
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
     render_pipeline: wgpu::RenderPipeline,
@@ -36,9 +35,10 @@ pub struct State {
     renderer: Renderer,
     program_state: program::State<GUI>,
     depth_texture: Texture,
-    instances: Vec<Instance>,
-    instance_buffer: wgpu::Buffer,
-    obj_model: Model,
+    // instances: Vec<Instance>,
+    // instance_buffer: wgpu::Buffer,
+    // obj_model: Model,
+    models: Vec<(Model, Vec<Instance>, wgpu::Buffer)>,
     uniforms: Uniforms,
     uniform_bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
@@ -303,6 +303,8 @@ impl State {
                 fs_module,
             )
         };
+        let mut models: Vec<(Model, Vec<Instance>, wgpu::Buffer)> = Vec::new();
+        models.push((obj_model, instances, instance_buffer));
 
         State {
             viewport,
@@ -316,9 +318,7 @@ impl State {
             renderer,
             program_state: state,
             depth_texture,
-            instances,
-            instance_buffer,
-            obj_model,
+            models,
             uniforms,
             uniform_bind_group,
             uniform_buffer,
@@ -538,27 +538,21 @@ impl State {
 
     fn update(&mut self, dt: std::time::Duration) {
         self.camera_controller.update_camera(&mut self.camera, dt);
-        self.uniforms.update_view_proj(&self.camera, &self.projection);
-        self.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[self.uniforms]),
-        );
-        self.queue.write_buffer(&self.uniform_buffer, 0, &bytemuck::cast_slice(&[self.uniforms]));
 
-        for instance in &mut self.instances {
-            instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
+        self.uniforms.update_view_proj(&self.camera, &self.projection);
+        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
+
+        for (_, mut instances, instance_buffer) in self.models {
+            for instance in &mut instances {
+                instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
+            }
+            let instance_data = instances
+                .iter()
+                .map(Instance::to_raw)
+                .collect::<Vec<_>>();
+            self.queue.write_buffer(&instance_buffer, 0, bytemuck::cast_slice(&instance_data));
         }
-        let instance_data = self
-            .instances
-            .iter()
-            .map(Instance::to_raw)
-            .collect::<Vec<_>>();
-        self.queue.write_buffer(
-            &self.instance_buffer,
-            0,
-            bytemuck::cast_slice(&instance_data),
-        );
+
         self.fps_meter.push(dt);
         self.program_state.queue_message(Message::UpdateFps(self.fps_meter.get_average()));
     }
