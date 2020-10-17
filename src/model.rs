@@ -4,6 +4,9 @@ use iced_wgpu::wgpu;
 use std::ops::Range;
 use std::path::Path;
 use iced_wgpu::wgpu::util::DeviceExt;
+use crate::instance::Instance;
+use iced_wgpu::wgpu::BindGroup;
+use cgmath::Vector2;
 
 pub trait Vertex {
     fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a>;
@@ -12,6 +15,13 @@ pub trait Vertex {
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
+}
+
+pub struct ModelData {
+    pub model: Model,
+    pub instances: Vec<Instance>,
+    pub instance_buffer: wgpu::Buffer,
+    pub uniform_bind_group: BindGroup,
 }
 
 impl Model {
@@ -135,9 +145,9 @@ impl Model {
 }
 
 pub struct Material {
-    pub name: String,
-    pub diffuse_texture: texture::Texture,
-    pub normal_texture: texture::Texture,
+    // pub name: String,
+    // pub diffuse_texture: texture::Texture,
+    // pub normal_texture: texture::Texture,
     pub bind_group: wgpu::BindGroup,
 }
 
@@ -173,9 +183,9 @@ impl Material {
         });
 
         Self {
-            name: String::from(name),
-            diffuse_texture,
-            normal_texture,
+            // name: String::from(name),
+            // diffuse_texture,
+            // normal_texture,
             bind_group,
         }
     }
