@@ -4,7 +4,7 @@ use crate::camera::{Camera, CameraController, Projection};
 use crate::controls::{GUI, Message};
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::model;
-use crate::model::{Vertex, DrawModel, Model};
+use crate::model::{Vertex, DrawModel, Model, ModelData};
 use crate::texture::Texture;
 use cgmath::prelude::*;
 use cgmath::{Deg, Point3, Quaternion, Rad, Vector3};
@@ -23,11 +23,12 @@ use crate::widgets::fps;
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
+const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
+
 pub struct State {
     viewport: Viewport,
     surface: wgpu::Surface,
     window: Window,
-    // todo can be moved to a getter
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
     render_pipeline: wgpu::RenderPipeline,
@@ -36,11 +37,8 @@ pub struct State {
     renderer: Renderer,
     program_state: program::State<GUI>,
     depth_texture: Texture,
-    instances: Vec<Instance>,
-    instance_buffer: wgpu::Buffer,
-    obj_model: Model,
+    model_data: Vec<ModelData>,
     uniforms: Uniforms,
-    uniform_bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
     camera: Camera,
     projection: Projection,
@@ -96,33 +94,6 @@ impl State {
         let camera = Camera::new(Point3::new(-30.0, 25.0, 25.0), Deg(0.0), Deg(-40.0));
         let projection = Projection::new(sc_desc.width, sc_desc.height, Deg(50.0), 0.1, 1000.0);
 
-        let instances = (0..NUM_ROWS)
-            .flat_map(|z| {
-                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                    let position = Vector3 {
-                        x: (x * 6) as f32,
-                        y: 0.0,
-                        z: (z * 6) as f32,
-                    } - INSTANCE_DISPLACEMENT;
-                    let rotation = if position.is_zero() {
-                        // this is needed so an object at (0, 0, 0) won't get scaled to zero
-                        // as Quaternions can effect scale if they're not created correctly
-                        Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
-                    } else {
-                        Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
-                    };
-
-                    Instance { position, rotation }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
-            label: Some("instance buffer"),
-        });
         let mut uniforms = Uniforms::new();
         uniforms.update_view_proj(&camera, &projection);
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -155,20 +126,6 @@ impl State {
                 ],
                 label: Some("uniform_bind_group_layout"),
             });
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &uniform_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer(instance_buffer.slice(..)),
-                },
-            ],
-            label: Some("uniform_bind_group"),
-        });
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -257,12 +214,15 @@ impl State {
 
         let depth_texture = Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
 
-        let obj_model = model::Model::load(
-            &device,
-            &queue,
-            &texture_bind_group_layout,
-            "resources/cube.obj",
-        ).unwrap();
+        let mut obj_models: Vec<Model> = Vec::new();
+        for model_path in MODELS.iter() {
+            obj_models.push(model::Model::load(
+                &device,
+                &queue,
+                &texture_bind_group_layout,
+                model_path,
+            ).unwrap());
+        }
 
         let render_pipeline = {
             let render_pipeline_layout =
@@ -303,6 +263,56 @@ impl State {
                 fs_module,
             )
         };
+        let mut models: Vec<ModelData> = Vec::new();
+        let mut i: i32 = -1;
+        for obj_model in obj_models {
+            i += 1;
+            let instances = (0..NUM_ROWS)
+                .flat_map(|z| {
+                    (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                        let position = Vector3 {
+                            x: (x * 6) as f32,
+                            y: 0.0,
+                            // * i * 30 just to move the second model next to the first model to showcase
+                            z: (z * 6 + i as u32 * 30) as f32,
+                        } - INSTANCE_DISPLACEMENT;
+                        let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0));
+                        // let rotation = if position.is_zero() {
+                        //     this is needed so an object at (0, 0, 0) won't get scaled to zero
+                        //     as Quaternions can effect scale if they're not created correctly
+                        //     Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
+                        // } else {
+                        //     Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
+                        // };
+
+                        Instance { position, rotation }
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+            let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
+                label: Some("instance buffer"),
+            });
+            let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &uniform_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Buffer(instance_buffer.slice(..)),
+                    },
+                ],
+                label: Some("uniform_bind_group"),
+            });
+
+            models.push(ModelData { model: obj_model, instances, instance_buffer, uniform_bind_group });
+        }
 
         State {
             viewport,
@@ -316,11 +326,8 @@ impl State {
             renderer,
             program_state: state,
             depth_texture,
-            instances,
-            instance_buffer,
-            obj_model,
+            model_data: models,
             uniforms,
-            uniform_bind_group,
             uniform_buffer,
             camera,
             projection,
@@ -505,20 +512,22 @@ impl State {
                 }),
             });
 
-            render_pass.set_pipeline(&self.light_render_pipeline);
-            render_pass.draw_light_model(
-                &self.obj_model,
-                &self.uniform_bind_group,
-                &self.light_bind_group,
-            );
+            // render_pass.set_pipeline(&self.light_render_pipeline);
+            // render_pass.draw_light_model(
+            //     &self.model_data[0].model,
+            //     &self.model_data[0].uniform_bind_group,
+            //     &self.light_bind_group,
+            // );
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw_model_instanced(
-                &self.obj_model,
-                0..self.instances.len() as u32,
-                &self.uniform_bind_group,
-                &self.light_bind_group,
-            );
+            for model_data in &mut self.model_data {
+                render_pass.draw_model_instanced(
+                    &model_data.model,
+                    0..model_data.instances.len() as u32,
+                    &model_data.uniform_bind_group,
+                    &self.light_bind_group,
+                );
+            }
         }
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
         let mouse_interaction = self.renderer.backend_mut().draw(
@@ -538,27 +547,21 @@ impl State {
 
     fn update(&mut self, dt: std::time::Duration) {
         self.camera_controller.update_camera(&mut self.camera, dt);
-        self.uniforms.update_view_proj(&self.camera, &self.projection);
-        self.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[self.uniforms]),
-        );
-        self.queue.write_buffer(&self.uniform_buffer, 0, &bytemuck::cast_slice(&[self.uniforms]));
 
-        for instance in &mut self.instances {
-            instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
+        self.uniforms.update_view_proj(&self.camera, &self.projection);
+        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
+
+        for model_data in &mut self.model_data {
+            for instance in &mut model_data.instances {
+                instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
+            }
+            let instance_data = model_data.instances
+                .iter()
+                .map(Instance::to_raw)
+                .collect::<Vec<_>>();
+            self.queue.write_buffer(&model_data.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
         }
-        let instance_data = self
-            .instances
-            .iter()
-            .map(Instance::to_raw)
-            .collect::<Vec<_>>();
-        self.queue.write_buffer(
-            &self.instance_buffer,
-            0,
-            bytemuck::cast_slice(&instance_data),
-        );
+
         self.fps_meter.push(dt);
         self.program_state.queue_message(Message::UpdateFps(self.fps_meter.get_average()));
     }

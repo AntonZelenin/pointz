@@ -9,6 +9,7 @@ mod scene;
 mod texture;
 mod lighting;
 mod widgets;
+mod primitives;
 
 use scene::State;
 use shaderc;

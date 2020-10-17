@@ -9,14 +9,12 @@ pub struct Meter {
 impl Meter {
     pub fn new() -> Self {
         Meter {
-            last_fps: Vec::with_capacity(FRAMES_CAPACITY),
+            last_fps: vec![0; FRAMES_CAPACITY],
         }
     }
 
     pub fn push(&mut self, duration: Duration) {
-        if self.last_fps.len() == FRAMES_CAPACITY {
-            self.last_fps.pop();
-        }
+        self.last_fps.pop();
         self.last_fps.insert(0, self.get_fps(duration));
     }
 
@@ -25,11 +23,7 @@ impl Meter {
     }
 
     pub fn get_average(&self) -> i32 {
-        let len = self.last_fps.len() as i32;
-        if len == 0 {
-            return 0;
-        }
         let sum: i32 = self.last_fps.iter().sum();
-        sum / len
+        sum / self.last_fps.len() as i32
     }
 }
