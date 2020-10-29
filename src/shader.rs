@@ -5,6 +5,8 @@ use std::io::Write;
 use std::path::Path;
 use std::ffi::OsStr;
 
+const SPV_PATH: &str = "src/shader/spv";
+
 pub fn compile_shaders(dir: &str) {
     let dir = Path::new(dir);
     compile_all(dir);
@@ -13,25 +15,26 @@ pub fn compile_shaders(dir: &str) {
 fn compile_all(dir: &Path) {
     for entry in fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
-        let path = entry.path();
-        if path.is_dir() {
-            compile_all(&path);
+        let file_path = entry.path();
+        if file_path.is_dir() {
+            compile_all(&file_path);
         } else {
-            compile_shader(&path);
+            if file_path.extension().unwrap() != "spv" {
+                compile_shader(&file_path);
+            }
         }
     }
 }
 
-fn compile_shader(path: &Path) {
-    let patasdfash = path.parent().unwrap().to_str().unwrap();
-    let out = format!("{}.spv", path.file_name().and_then(OsStr::to_str).unwrap());
-    let shader_type: shaderc::ShaderKind = get_shader_king(path.extension().and_then(OsStr::to_str).unwrap());
+fn compile_shader(file_path: &Path) {
+    let out = format!("{}/{}.spv", SPV_PATH, file_path.file_name().and_then(OsStr::to_str).unwrap());
+    let shader_type = get_shader_king(file_path.extension().and_then(OsStr::to_str).unwrap());
     let mut compiler = shaderc::Compiler::new().unwrap();
     let mut options = shaderc::CompileOptions::new().unwrap();
     options.add_macro_definition("EP", Some("main"));
-    let source = fs::read_to_string(path).expect("file doesn't exist");
+    let source = fs::read_to_string(file_path).expect("file doesn't exist");
     let frag = compiler
-        .compile_into_spirv(&source, shader_type, path.to_str().unwrap(), "main", Some(&options))
+        .compile_into_spirv(&source, shader_type, file_path.to_str().unwrap(), "main", Some(&options))
         .unwrap();
     let mut file = File::create(out).unwrap();
     file.write_all(frag.as_binary_u8()).unwrap();

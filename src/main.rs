@@ -17,28 +17,7 @@ use scene::State;
 
 pub fn main() {
     env_logger::init();
-
     shader::compile_shaders("src/shader");
-    // compile_shaders(
-    //     "src/shader/shader.frag",
-    //     "src/shader/frag.spv",
-    //     shaderc::ShaderKind::Fragment,
-    // );
-    // compile_shaders(
-    //     "src/shader/shader.vert",
-    //     "src/shader/vert.spv",
-    //     shaderc::ShaderKind::Vertex,
-    // );
-    // compile_shaders(
-    //     "src/shader/light.vert",
-    //     "src/shader/light_vert.spv",
-    //     shaderc::ShaderKind::Vertex,
-    // );
-    // compile_shaders(
-    //     "src/shader/light.frag",
-    //     "src/shader/light_frag.spv",
-    //     shaderc::ShaderKind::Fragment,
-    // );
 
     let event_loop = EventLoop::new();
     let window = Window::new(&event_loop).unwrap();

@@ -236,8 +236,8 @@ impl State {
                     label: Some("main"),
                     push_constant_ranges: &[],
                 });
-            let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/vert.spv"));
-            let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/frag.spv"));
+            let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/shader.vert.spv"));
+            let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/shader.frag.spv"));
             build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
         };
 
@@ -247,10 +247,8 @@ impl State {
                 bind_group_layouts: &[&uniform_bind_group_layout, &light_bind_group_layout],
                 push_constant_ranges: &[],
             });
-            let vs_module =
-                device.create_shader_module(wgpu::include_spirv!("shader/light_vert.spv"));
-            let fs_module =
-                device.create_shader_module(wgpu::include_spirv!("shader/light_frag.spv"));
+            let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/light.vert.spv"));
+            let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/light.frag.spv"));
             build_render_pipeline(&device, &layout, vs_module, fs_module)
         };
         let mut models: Vec<ModelData> = Vec::new();
@@ -315,8 +313,8 @@ impl State {
                 bind_group_layouts: &[&uniform_bind_group_layout],
                 push_constant_ranges: &[],
             });
-            let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/debug/vert.spv"));
-            let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/debug/frag.spv"));
+            let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.vert.spv"));
+            let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.frag.spv"));
             build_render_pipeline(&device, &layout, vs_module, fs_module)
         };
 
