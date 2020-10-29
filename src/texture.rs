@@ -1,6 +1,6 @@
 use anyhow::*;
 use iced_wgpu::wgpu;
-use image::{GenericImageView};
+use image::GenericImageView;
 use std::path::Path;
 
 pub struct Texture {

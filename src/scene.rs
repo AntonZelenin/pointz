@@ -1,25 +1,25 @@
-use std::iter;
 use crate::buffer::Uniforms;
 use crate::camera::{Camera, CameraController, Projection};
-use crate::controls::{GUI, Message};
+use crate::controls::{Message, GUI};
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
+use crate::lighting::{DrawLight, Light};
 use crate::model;
-use crate::model::{Vertex, DrawModel, Model, ModelData};
+use crate::model::{DrawModel, Model, ModelData, Vertex};
 use crate::texture::Texture;
+use crate::widgets::fps;
 use cgmath::prelude::*;
-use cgmath::{Deg, Point3, Quaternion, Rad, Vector3};
+use cgmath::{Deg, Point3, Quaternion, Rad, Vector2, Vector3, Vector4};
 use iced_wgpu::wgpu;
+use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, ShaderModule};
 use iced_wgpu::{Backend, Renderer, Settings, Viewport};
 use iced_winit::{conversion, futures, program, winit, Debug, Size};
+use std::iter;
 use std::time::Instant;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::{dpi::PhysicalPosition, event::ModifiersState, window::Window};
-use crate::lighting::{Light, DrawLight};
-use iced_wgpu::wgpu::util::DeviceExt;
-use crate::widgets::fps;
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
@@ -54,6 +54,10 @@ pub struct State {
     light_render_pipeline: wgpu::RenderPipeline,
 
     fps_meter: fps::Meter,
+
+    debug_render_pipeline: wgpu::RenderPipeline,
+    vec_start: Vector3<f32>,
+    vec_end: Vector3<f32>,
 }
 
 impl State {
@@ -61,12 +65,11 @@ impl State {
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
         let surface = unsafe { instance.create_surface(&window) };
         let (mut device, queue) = futures::executor::block_on(async {
-            let adapter = instance.request_adapter(
-                &wgpu::RequestAdapterOptions {
+            let adapter = instance
+                .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::Default,
                     compatible_surface: Some(&surface),
-                },
-            )
+                })
                 .await
                 .expect("Request adapter");
 
@@ -216,12 +219,10 @@ impl State {
 
         let mut obj_models: Vec<Model> = Vec::new();
         for model_path in MODELS.iter() {
-            obj_models.push(model::Model::load(
-                &device,
-                &queue,
-                &texture_bind_group_layout,
-                model_path,
-            ).unwrap());
+            obj_models.push(
+                model::Model::load(&device, &queue, &texture_bind_group_layout, model_path)
+                    .unwrap(),
+            );
         }
 
         let render_pipeline = {
@@ -235,33 +236,22 @@ impl State {
                     label: Some("main"),
                     push_constant_ranges: &[],
                 });
-            let vs_module =
-                device.create_shader_module(wgpu::include_spirv!("shader/vert.spv"));
-            let fs_module =
-                device.create_shader_module(wgpu::include_spirv!("shader/frag.spv"));
+            let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/vert.spv"));
+            let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/frag.spv"));
             build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
         };
 
-        let
-            light_render_pipeline = {
+        let light_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("light pipeline"),
-                bind_group_layouts: &[
-                    &uniform_bind_group_layout,
-                    &light_bind_group_layout,
-                ],
+                bind_group_layouts: &[&uniform_bind_group_layout, &light_bind_group_layout],
                 push_constant_ranges: &[],
             });
             let vs_module =
                 device.create_shader_module(wgpu::include_spirv!("shader/light_vert.spv"));
             let fs_module =
                 device.create_shader_module(wgpu::include_spirv!("shader/light_frag.spv"));
-            build_render_pipeline(
-                &device,
-                &layout,
-                vs_module,
-                fs_module,
-            )
+            build_render_pipeline(&device, &layout, vs_module, fs_module)
         };
         let mut models: Vec<ModelData> = Vec::new();
         let mut i: i32 = -1;
@@ -311,8 +301,24 @@ impl State {
                 label: Some("uniform_bind_group"),
             });
 
-            models.push(ModelData { model: obj_model, instances, instance_buffer, uniform_bind_group });
+            models.push(ModelData {
+                model: obj_model,
+                instances,
+                instance_buffer,
+                uniform_bind_group,
+            });
         }
+
+        let debug_render_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("debug pipeline"),
+                bind_group_layouts: &[&uniform_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+            let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/debug/vert.spv"));
+            let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/debug/frag.spv"));
+            build_render_pipeline(&device, &layout, vs_module, fs_module)
+        };
 
         State {
             viewport,
@@ -342,6 +348,9 @@ impl State {
             light_bind_group,
             light_render_pipeline,
             fps_meter: fps::Meter::new(),
+            debug_render_pipeline,
+            vec_start: Vector3::new(0.0, 0.0, 0.0),
+            vec_end: Vector3::new(0.0, 0.0, 0.0),
         }
     }
 
@@ -360,11 +369,11 @@ impl State {
                 match event {
                     WindowEvent::KeyboardInput {
                         input:
-                        KeyboardInput {
-                            virtual_keycode: Some(key),
-                            state,
-                            ..
-                        },
+                            KeyboardInput {
+                                virtual_keycode: Some(key),
+                                state,
+                                ..
+                            },
                         ..
                     } => {
                         self.camera_controller.process_keyboard(*key, *state);
@@ -379,6 +388,15 @@ impl State {
                     } => {
                         self.camera_mode = *state == ElementState::Pressed;
                         self.window.set_cursor_visible(!self.camera_mode);
+                    }
+                    WindowEvent::MouseInput {
+                        button: MouseButton::Left,
+                        state,
+                        ..
+                    } => {
+                        if *state == ElementState::Pressed {
+                            self.process_left_click();
+                        }
                     }
                     WindowEvent::CursorMoved { position, .. } => {
                         if self.camera_mode {
@@ -488,7 +506,11 @@ impl State {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: {
-                            let [r, g, b, a] = self.program_state.program().background_color().into_linear();
+                            let [r, g, b, a] = self
+                                .program_state
+                                .program()
+                                .background_color()
+                                .into_linear();
                             wgpu::LoadOp::Clear(wgpu::Color {
                                 r: r as f64,
                                 g: g as f64,
@@ -548,22 +570,62 @@ impl State {
     fn update(&mut self, dt: std::time::Duration) {
         self.camera_controller.update_camera(&mut self.camera, dt);
 
-        self.uniforms.update_view_proj(&self.camera, &self.projection);
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
+        self.uniforms
+            .update_view_proj(&self.camera, &self.projection);
+        self.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.uniforms]),
+        );
 
         for model_data in &mut self.model_data {
             for instance in &mut model_data.instances {
                 instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
             }
-            let instance_data = model_data.instances
+            let instance_data = model_data
+                .instances
                 .iter()
                 .map(Instance::to_raw)
                 .collect::<Vec<_>>();
-            self.queue.write_buffer(&model_data.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
+            self.queue.write_buffer(
+                &model_data.instance_buffer,
+                0,
+                bytemuck::cast_slice(&instance_data),
+            );
         }
 
         self.fps_meter.push(dt);
-        self.program_state.queue_message(Message::UpdateFps(self.fps_meter.get_average()));
+        self.program_state
+            .queue_message(Message::UpdateFps(self.fps_meter.get_average()));
+    }
+
+    fn process_left_click(&mut self) {
+        let click_coords = self.get_normalized_opengl_coords();
+        let clip_coords = Vector4::new(click_coords.x, click_coords.y, -1.0, 1.0);
+        // y is deviated by 2 for some reason
+        let click_world_coords = self.camera.calc_matrix().invert().unwrap() * clip_coords;
+        let mut eye_coords = self.projection.calc_matrix().invert().unwrap() * clip_coords;
+        eye_coords = Vector4::new(eye_coords.x, eye_coords.y, -1.0, 0.0);
+        let ray_world = (self.camera.calc_matrix().invert().unwrap() * eye_coords).normalize();
+        self.vec_start = Vector3::new(click_world_coords.x, click_world_coords.y, click_world_coords.z);
+        self.vec_end = Vector3::new(ray_world.x, ray_world.y, ray_world.z) * self.projection.zfar;
+        // self.program_state.queue_message(Message::DebugInfo(
+        //     format!(
+        //         "x {}, y {}, z {}\n",
+        //         click_world_coords.x, click_world_coords.y, click_world_coords.z
+        //     ) + &format!(
+        //         "x {}, y {}, z {}",
+        //         self.camera.position.x, self.camera.position.y, self.camera.position.z
+        //     ),
+        // ));
+    }
+
+    fn get_normalized_opengl_coords(&self) -> Vector2<f32> {
+        // convert mouse position to opengl coords
+        Vector2::new(
+            (2.0 * self.cursor_position.x as f32) / self.sc_desc.width as f32 - 1.0,
+            -(2.0 * self.cursor_position.y as f32) / self.sc_desc.height as f32 - 1.0,
+        )
     }
 }
 

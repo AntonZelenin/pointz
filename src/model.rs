@@ -1,12 +1,11 @@
-use anyhow::*;
+use crate::instance::Instance;
 use crate::texture;
+use anyhow::*;
 use iced_wgpu::wgpu;
+use iced_wgpu::wgpu::util::DeviceExt;
+use iced_wgpu::wgpu::BindGroup;
 use std::ops::Range;
 use std::path::Path;
-use iced_wgpu::wgpu::util::DeviceExt;
-use crate::instance::Instance;
-use iced_wgpu::wgpu::BindGroup;
-use cgmath::Vector2;
 
 pub trait Vertex {
     fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a>;
@@ -39,10 +38,12 @@ impl Model {
         let mut materials = Vec::new();
         for mat in obj_materials {
             let diffuse_path = mat.diffuse_texture;
-            let diffuse_texture = texture::Texture::load(device, queue, containing_folder.join(diffuse_path), false)?;
+            let diffuse_texture =
+                texture::Texture::load(device, queue, containing_folder.join(diffuse_path), false)?;
 
             let normal_path = mat.normal_texture;
-            let normal_texture = texture::Texture::load(device, queue, containing_folder.join(normal_path), true)?;
+            let normal_texture =
+                texture::Texture::load(device, queue, containing_folder.join(normal_path), true)?;
 
             materials.push(Material::new(
                 device,
@@ -62,13 +63,15 @@ impl Model {
                         m.mesh.positions[i * 3],
                         m.mesh.positions[i * 3 + 1],
                         m.mesh.positions[i * 3 + 2],
-                    ].into(),
+                    ]
+                    .into(),
                     tex_coords: [m.mesh.texcoords[i * 2], m.mesh.texcoords[i * 2 + 1]].into(),
                     normal: [
                         m.mesh.normals[i * 3],
                         m.mesh.normals[i * 3 + 1],
                         m.mesh.normals[i * 3 + 2],
-                    ].into(),
+                    ]
+                    .into(),
                     tangent: [0.0; 3].into(),
                     bitangent: [0.0; 3].into(),
                 });
@@ -107,7 +110,7 @@ impl Model {
                 //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
                 // Luckily, the place I found this equation provided
                 // the solution!
-                let r = 1.0 / (delta_uv1 .x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+                let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
                 let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
                 let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
 
@@ -250,8 +253,8 @@ impl Vertex for ModelVertex {
 }
 
 pub trait DrawModel<'a, 'b>
-    where
-        'b: 'a,
+where
+    'b: 'a,
 {
     fn draw_mesh(
         &mut self,
@@ -292,8 +295,8 @@ pub trait DrawModel<'a, 'b>
 }
 
 impl<'a, 'b> DrawModel<'a, 'b> for wgpu::RenderPass<'a>
-    where
-        'b: 'a,
+where
+    'b: 'a,
 {
     fn draw_mesh(
         &mut self,

@@ -25,8 +25,8 @@ impl Light {
 }
 
 pub trait DrawLight<'a, 'b>
-    where
-        'b: 'a,
+where
+    'b: 'a,
 {
     fn draw_light_mesh(
         &mut self,
@@ -59,8 +59,8 @@ pub trait DrawLight<'a, 'b>
 }
 
 impl<'a, 'b> DrawLight<'a, 'b> for wgpu::RenderPass<'a>
-    where
-        'b: 'a,
+where
+    'b: 'a,
 {
     fn draw_light_mesh(
         &mut self,

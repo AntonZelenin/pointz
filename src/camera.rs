@@ -1,9 +1,9 @@
 use cgmath::*;
+use iced_winit::winit;
+use iced_winit::winit::dpi::PhysicalPosition;
 use std::f32::consts::FRAC_PI_2;
 use std::time::Duration;
-use iced_winit::winit;
 use winit::event::*;
-use iced_winit::winit::dpi::PhysicalPosition;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 pub const OPENGL_TO_WGPU_MATRIX: Matrix4<f32> = Matrix4::new(
@@ -15,8 +15,8 @@ pub const OPENGL_TO_WGPU_MATRIX: Matrix4<f32> = Matrix4::new(
 
 pub struct Camera {
     pub position: Point3<f32>,
-    yaw: Rad<f32>,
-    pitch: Rad<f32>,
+    pub yaw: Rad<f32>,
+    pub pitch: Rad<f32>,
 }
 
 impl Camera {
@@ -33,6 +33,7 @@ impl Camera {
     }
 
     pub fn calc_matrix(&self) -> Matrix4<f32> {
+        // todo it cannot look too high or too low
         Matrix4::look_at_dir(
             self.position,
             Vector3::new(self.yaw.0.cos(), self.pitch.0.sin(), self.yaw.0.sin()).normalize(),
@@ -45,7 +46,7 @@ pub struct Projection {
     aspect: f32,
     fovy: Rad<f32>,
     znear: f32,
-    zfar: f32,
+    pub zfar: f32,
 }
 
 impl Projection {
@@ -75,8 +76,8 @@ pub struct CameraController {
     amount_backward: f32,
     amount_up: f32,
     amount_down: f32,
-    rotate_horizontal: f32,
-    rotate_vertical: f32,
+    pub rotate_horizontal: f32,
+    pub rotate_vertical: f32,
     scroll: f32,
     speed: f32,
     sensitivity: f32,
