@@ -11,6 +11,31 @@ pub trait Vertex {
     fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a>;
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct SimpleVertex {
+    pub position: [f32; 3],
+}
+
+unsafe impl bytemuck::Pod for SimpleVertex {}
+unsafe impl bytemuck::Zeroable for SimpleVertex {}
+
+impl Vertex for SimpleVertex {
+    fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
+        wgpu::VertexBufferDescriptor {
+            stride: std::mem::size_of::<SimpleVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::InputStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttributeDescriptor {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float3,
+                },
+            ],
+        }
+    }
+}
+
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,

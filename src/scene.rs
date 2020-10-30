@@ -4,7 +4,7 @@ use crate::controls::{Message, GUI};
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::lighting::{DrawLight, Light};
 use crate::model;
-use crate::model::{DrawModel, Model, ModelData, Vertex};
+use crate::model::{DrawModel, Model, ModelData, Vertex, SimpleVertex};
 use crate::texture::Texture;
 use crate::widgets::fps;
 use cgmath::prelude::*;
@@ -24,6 +24,7 @@ use winit::{dpi::PhysicalPosition, event::ModifiersState, window::Window};
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
+const INDICES: &[u32] = &[0, 1];
 
 pub struct State {
     viewport: Viewport,
@@ -56,8 +57,8 @@ pub struct State {
     fps_meter: fps::Meter,
 
     debug_render_pipeline: wgpu::RenderPipeline,
-    vec_start: Vector3<f32>,
-    vec_end: Vector3<f32>,
+    debug_buff: wgpu::Buffer,
+    index_buff: wgpu::Buffer,
 }
 
 impl State {
@@ -310,13 +311,32 @@ impl State {
         let debug_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("debug pipeline"),
-                bind_group_layouts: &[&uniform_bind_group_layout],
+                // bind_group_layouts: &[&uniform_bind_group_layout],
+                bind_group_layouts: &[],
                 push_constant_ranges: &[],
             });
             let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.vert.spv"));
             let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.frag.spv"));
             build_render_pipeline(&device, &layout, vs_module, fs_module)
         };
+
+        let debug_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&[
+                SimpleVertex {
+                    position: [0.0; 3],
+                },
+                SimpleVertex {
+                    position: [0.0; 3],
+                }
+            ]),
+            usage: wgpu::BufferUsage::VERTEX,
+        });
+        let index_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsage::INDEX,
+        });
 
         State {
             viewport,
@@ -347,8 +367,8 @@ impl State {
             light_render_pipeline,
             fps_meter: fps::Meter::new(),
             debug_render_pipeline,
-            vec_start: Vector3::new(0.0, 0.0, 0.0),
-            vec_end: Vector3::new(0.0, 0.0, 0.0),
+            debug_buff,
+            index_buff,
         }
     }
 
@@ -548,7 +568,14 @@ impl State {
                     &self.light_bind_group,
                 );
             }
+
+            render_pass.set_pipeline(&self.debug_render_pipeline);
+            render_pass.set_vertex_buffer(0, self.debug_buff.slice(..));
+            render_pass.set_index_buffer(self.index_buff.slice(..));
+            // render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            render_pass.draw_indexed(0..2, 0, 0..1);
         }
+
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
         let mouse_interaction = self.renderer.backend_mut().draw(
             &mut self.device,
@@ -605,8 +632,13 @@ impl State {
         let mut eye_coords = self.projection.calc_matrix().invert().unwrap() * clip_coords;
         eye_coords = Vector4::new(eye_coords.x, eye_coords.y, -1.0, 0.0);
         let ray_world = (self.camera.calc_matrix().invert().unwrap() * eye_coords).normalize();
-        self.vec_start = Vector3::new(click_world_coords.x, click_world_coords.y, click_world_coords.z);
-        self.vec_end = Vector3::new(ray_world.x, ray_world.y, ray_world.z) * self.projection.zfar;
+        let vec_start = SimpleVertex{ position: [click_world_coords.x, click_world_coords.y, click_world_coords.z] };
+        let vec_end = SimpleVertex{ position: [ray_world.x  * self.projection.zfar, ray_world.y * self.projection.zfar, ray_world.z * self.projection.zfar] };
+        self.debug_buff = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&[vec_start, vec_end]),
+            usage: wgpu::BufferUsage::VERTEX,
+        });
         // self.program_state.queue_message(Message::DebugInfo(
         //     format!(
         //         "x {}, y {}, z {}\n",
