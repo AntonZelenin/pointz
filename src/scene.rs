@@ -59,6 +59,7 @@ pub struct State {
     debug_render_pipeline: wgpu::RenderPipeline,
     debug_buff: wgpu::Buffer,
     index_buff: wgpu::Buffer,
+    debug_uniform_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -308,11 +309,25 @@ impl State {
             });
         }
 
+        let debug_uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::VERTEX,
+                        ty: wgpu::BindingType::UniformBuffer {
+                            dynamic: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+                label: Some("debug_uniform_bind_group_layout"),
+            });
         let debug_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("debug pipeline"),
-                // bind_group_layouts: &[&uniform_bind_group_layout],
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&debug_uniform_bind_group_layout],
                 push_constant_ranges: &[],
             });
             let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.vert.spv"));
@@ -324,18 +339,28 @@ impl State {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&[
                 SimpleVertex {
-                    position: [0.0; 3],
+                    position: [-30.0, 23.0, 25.0],
                 },
                 SimpleVertex {
-                    position: [0.0; 3],
+                    position: [256.0, -918.0, 302.0],
                 }
             ]),
             usage: wgpu::BufferUsage::VERTEX,
         });
         let index_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
+            label: Some("Debug Index Buffer"),
             contents: bytemuck::cast_slice(INDICES),
             usage: wgpu::BufferUsage::INDEX,
+        });
+        let debug_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &debug_uniform_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
+                },
+            ],
+            label: Some("debug_uniform_bind_group"),
         });
 
         State {
@@ -369,6 +394,7 @@ impl State {
             debug_render_pipeline,
             debug_buff,
             index_buff,
+            debug_uniform_bind_group,
         }
     }
 
@@ -572,7 +598,7 @@ impl State {
             render_pass.set_pipeline(&self.debug_render_pipeline);
             render_pass.set_vertex_buffer(0, self.debug_buff.slice(..));
             render_pass.set_index_buffer(self.index_buff.slice(..));
-            // render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.debug_uniform_bind_group, &[]);
             render_pass.draw_indexed(0..2, 0, 0..1);
         }
 
