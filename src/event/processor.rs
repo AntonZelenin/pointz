@@ -1,8 +1,10 @@
 use crate::scene::App;
 use iced_wgpu::Viewport;
-use iced_winit::{conversion, Size};
+use iced_winit::winit::event::{
+    DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, MouseButton, WindowEvent,
+};
 use iced_winit::winit::event_loop::ControlFlow;
-use iced_winit::winit::event::{DeviceEvent, Event, ElementState, KeyboardInput, MouseButton, WindowEvent, ModifiersState};
+use iced_winit::{conversion, Size};
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
@@ -13,14 +15,16 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
             match event {
                 WindowEvent::KeyboardInput {
                     input:
-                    KeyboardInput {
-                        virtual_keycode: Some(key),
-                        state,
-                        ..
-                    },
+                        KeyboardInput {
+                            virtual_keycode: Some(key),
+                            state,
+                            ..
+                        },
                     ..
                 } => {
-                    app.camera_state.camera_controller.process_keyboard(*key, *state);
+                    app.camera_state
+                        .camera_controller
+                        .process_keyboard(*key, *state);
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
                     app.camera_state.camera_controller.process_scroll(delta);
@@ -31,7 +35,9 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                     ..
                 } => {
                     app.camera_state.camera_mode = *state == ElementState::Pressed;
-                    app.window.window.set_cursor_visible(!app.camera_state.camera_mode);
+                    app.window
+                        .window
+                        .set_cursor_visible(!app.camera_state.camera_mode);
                 }
                 WindowEvent::MouseInput {
                     button: MouseButton::Left,
@@ -45,7 +51,8 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                 WindowEvent::CursorMoved { position, .. } => {
                     if app.camera_state.camera_mode {
                         // make cursor stay at the same place
-                        app.window.window
+                        app.window
+                            .window
                             .set_cursor_position(app.gui.cursor_position)
                             .unwrap();
                     } else {
@@ -85,7 +92,7 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                         app.window.viewport.scale_factor(),
                     ),
                     None,
-                    &mut app.rendering.renderer,
+                    &mut app.gui.renderer,
                     &mut app.gui.debug,
                 );
             }
@@ -106,13 +113,26 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
         Event::DeviceEvent { event, .. } => match event {
             DeviceEvent::MouseMotion { delta } => {
                 // todo too long, seems will move to a method or sort of
-                if app.camera_state.cursor_watcher.last_frames_cursor_deltas.len() > KEEP_CURSOR_POS_FOR_NUM_FRAMES {
-                    app.camera_state.cursor_watcher.last_frames_cursor_deltas.drain(..1);
+                if app
+                    .camera_state
+                    .cursor_watcher
+                    .last_frames_cursor_deltas
+                    .len()
+                    > KEEP_CURSOR_POS_FOR_NUM_FRAMES
+                {
+                    app.camera_state
+                        .cursor_watcher
+                        .last_frames_cursor_deltas
+                        .drain(..1);
                 }
-                app.camera_state.cursor_watcher.last_frames_cursor_deltas.push(*delta);
+                app.camera_state
+                    .cursor_watcher
+                    .last_frames_cursor_deltas
+                    .push(*delta);
                 let (mouse_dx, mouse_dy) = app.camera_state.cursor_watcher.get_avg_cursor_pos();
                 if app.camera_state.camera_mode {
-                    app.camera_state.camera_controller
+                    app.camera_state
+                        .camera_controller
                         .process_mouse(mouse_dx / 2.0, mouse_dy / 2.0);
                 }
             }

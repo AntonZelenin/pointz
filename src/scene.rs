@@ -1,10 +1,10 @@
 use crate::buffer::Uniforms;
-use crate::camera::{Camera, CameraController, Projection, CursorWatcher};
+use crate::camera::{Camera, CameraController, CursorWatcher, Projection};
 use crate::controls;
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::lighting::Light;
 use crate::model;
-use crate::model::{DrawModel, Model, ModelData, Vertex, SimpleVertex};
+use crate::model::{DrawModel, Model, ModelData, SimpleVertex, Vertex};
 use crate::texture::Texture;
 use crate::widgets::fps;
 use cgmath::prelude::*;
@@ -13,21 +13,45 @@ use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, ShaderModule};
 use iced_wgpu::{Backend, Renderer, Settings, Viewport};
+use iced_winit::winit::event_loop::EventLoop;
+use iced_winit::winit::window;
 use iced_winit::{conversion, futures, program, winit, Debug, Size};
 use std::iter;
 use std::time::Instant;
+use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
-use winit::{dpi::PhysicalPosition};
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 const INDICES: &[u32] = &[0, 1];
 
 pub struct GUI {
+    pub renderer: Renderer,
     pub program_state: program::State<controls::GUI>,
     // todo keep a list of widgets, come up with a normal design
     fps_meter: fps::Meter,
     pub cursor_position: PhysicalPosition<f64>,
     pub debug: Debug,
+}
+
+impl GUI {
+    pub fn new(device: &mut wgpu::Device, viewport: &Viewport) -> GUI {
+        let mut renderer = iced_wgpu::Renderer::new(Backend::new(device, Settings::default()));
+        let mut debug = Debug::new();
+        let program_state = program::State::new(
+            controls::GUI::new(),
+            viewport.logical_size(),
+            conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), viewport.scale_factor()),
+            &mut renderer,
+            &mut debug,
+        );
+        GUI {
+            renderer,
+            program_state,
+            fps_meter: fps::Meter::new(),
+            cursor_position: PhysicalPosition::new(0.0, 0.0),
+            debug,
+        }
+    }
 }
 
 pub struct CameraState {
@@ -38,28 +62,60 @@ pub struct CameraState {
     pub cursor_watcher: CursorWatcher,
 }
 
+impl CameraState {
+    pub fn new(sc_desc: &wgpu::SwapChainDescriptor) -> CameraState {
+        let camera = Camera::new(Point3::new(-30.0, 25.0, 25.0), Deg(0.0), Deg(-40.0));
+        let camera_controller = CameraController::new(4.0, 0.4);
+        let projection = Projection::new(sc_desc.width, sc_desc.height, Deg(50.0), 0.1, 1000.0);
+        CameraState {
+            camera,
+            camera_controller,
+            camera_mode: false,
+            projection,
+            cursor_watcher: CursorWatcher::new(),
+        }
+    }
+}
+
 pub struct Window {
     pub viewport: Viewport,
-    surface: wgpu::Surface,
+    pub surface: wgpu::Surface,
     pub window: winit::window::Window,
     pub resized: bool,
 }
 
+impl Window {
+    pub fn new(instance: &wgpu::Instance, event_loop: &EventLoop<()>) -> Window {
+        let window = window::Window::new(&event_loop).unwrap();
+        let viewport = Viewport::with_physical_size(
+            Size::new(window.inner_size().width, window.inner_size().height),
+            window.scale_factor(),
+        );
+        let surface = unsafe { instance.create_surface(&window) };
+
+        let window = Window {
+            viewport,
+            surface,
+            window,
+            resized: false,
+        };
+        window
+    }
+}
+
 pub struct Rendering {
-    sc_desc: wgpu::SwapChainDescriptor,
+    pub sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
 
-    queue: wgpu::Queue,
-    device: wgpu::Device,
-
-    pub renderer: Renderer,
+    pub queue: wgpu::Queue,
+    pub device: wgpu::Device,
 
     render_pipeline: wgpu::RenderPipeline,
     debug_render_pipeline: wgpu::RenderPipeline,
     light_render_pipeline: wgpu::RenderPipeline,
 
     uniforms: Uniforms,
-    uniform_buffer: wgpu::Buffer,
+    pub uniform_buffer: wgpu::Buffer,
     debug_buff: wgpu::Buffer,
     index_buff: wgpu::Buffer,
 
@@ -69,30 +125,17 @@ pub struct Rendering {
     // todo move
     depth_texture: Texture,
     pub last_render_time: Instant,
+    pub texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub uniform_bind_group_layout: wgpu::BindGroupLayout,
 }
 
-struct Scene {
-    model_data: Vec<ModelData>,
-}
-
-
-pub struct App {
-    pub window: Window,
-    pub rendering: Rendering,
-    pub gui: GUI,
-    pub camera_state: CameraState,
-    scene: Scene,
-}
-
-impl App {
-    pub fn new(window: winit::window::Window) -> App {
-        let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
-        let surface = unsafe { instance.create_surface(&window) };
+impl Rendering {
+    pub fn new(instance: &wgpu::Instance, window: &Window) -> Rendering {
         let (mut device, queue) = futures::executor::block_on(async {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::Default,
-                    compatible_surface: Some(&surface),
+                    compatible_surface: Some(&window.surface),
                 })
                 .await
                 .expect("Request adapter");
@@ -109,7 +152,7 @@ impl App {
                 .await
                 .expect("Failed to create device")
         });
-        let size = window.inner_size();
+        let size = window.window.inner_size();
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -117,17 +160,36 @@ impl App {
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
         };
-        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
-        let camera = Camera::new(Point3::new(-30.0, 25.0, 25.0), Deg(0.0), Deg(-40.0));
-        let projection = Projection::new(sc_desc.width, sc_desc.height, Deg(50.0), 0.1, 1000.0);
+        let swap_chain = device.create_swap_chain(&window.surface, &sc_desc);
 
-        let mut uniforms = Uniforms::new();
-        uniforms.update_view_proj(&camera, &projection);
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            contents: bytemuck::cast_slice(&[uniforms]),
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-            label: Some("uniform buffer"),
-        });
+        let depth_texture = Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
+
+        let debug_uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("debug_uniform_bind_group_layout"),
+            });
+        let debug_render_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("debug pipeline"),
+                bind_group_layouts: &[&debug_uniform_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+            let vs_module =
+                device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.vert.spv"));
+            let fs_module =
+                device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.frag.spv"));
+            build_render_pipeline(&device, &layout, vs_module, fs_module)
+        };
+
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -222,31 +284,53 @@ impl App {
             }],
             label: None,
         });
+        let light_render_pipeline = {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("light pipeline"),
+                bind_group_layouts: &[&uniform_bind_group_layout, &light_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+            let vs_module =
+                device.create_shader_module(wgpu::include_spirv!("shader/spv/light.vert.spv"));
+            let fs_module =
+                device.create_shader_module(wgpu::include_spirv!("shader/spv/light.frag.spv"));
+            build_render_pipeline(&device, &layout, vs_module, fs_module)
+        };
 
-        let viewport = Viewport::with_physical_size(
-            Size::new(window.inner_size().width, window.inner_size().height),
-            window.scale_factor(),
-        );
+        let mut uniforms = Uniforms::new();
+        // todo will update it later using camera
+        // uniforms.update_view_proj(&camera, &projection);
+        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            contents: bytemuck::cast_slice(&[uniforms]),
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            label: Some("uniform buffer"),
+        });
 
-        let mut debug = Debug::new();
-        let mut renderer = iced_wgpu::Renderer::new(Backend::new(&mut device, Settings::default()));
-        let program_state = program::State::new(
-            controls::GUI::new(),
-            viewport.logical_size(),
-            conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), viewport.scale_factor()),
-            &mut renderer,
-            &mut debug,
-        );
-
-        let depth_texture = Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
-
-        let mut obj_models: Vec<Model> = Vec::new();
-        for model_path in MODELS.iter() {
-            obj_models.push(
-                model::Model::load(&device, &queue, &texture_bind_group_layout, model_path)
-                    .unwrap(),
-            );
-        }
+        let debug_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&[
+                SimpleVertex {
+                    position: [-30.0, 23.0, 25.0],
+                },
+                SimpleVertex {
+                    position: [256.0, -918.0, 302.0],
+                },
+            ]),
+            usage: wgpu::BufferUsage::VERTEX,
+        });
+        let index_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Debug Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsage::INDEX,
+        });
+        let debug_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &debug_uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
+            }],
+            label: Some("debug_uniform_bind_group"),
+        });
 
         let render_pipeline = {
             let render_pipeline_layout =
@@ -264,16 +348,46 @@ impl App {
             build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
         };
 
-        let light_render_pipeline = {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("light pipeline"),
-                bind_group_layouts: &[&uniform_bind_group_layout, &light_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-            let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/light.vert.spv"));
-            let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/light.frag.spv"));
-            build_render_pipeline(&device, &layout, vs_module, fs_module)
-        };
+        Rendering {
+            swap_chain,
+            sc_desc,
+            render_pipeline,
+            queue,
+            device,
+            depth_texture,
+            last_render_time: std::time::Instant::now(),
+            debug_render_pipeline,
+            light_render_pipeline,
+            uniforms,
+            uniform_buffer,
+            light_bind_group,
+            debug_buff,
+            index_buff,
+            debug_uniform_bind_group,
+            texture_bind_group_layout,
+            uniform_bind_group_layout,
+        }
+    }
+}
+
+pub struct Scene {
+    pub model_data: Vec<ModelData>,
+}
+
+impl Scene {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        texture_bind_group_layout: &wgpu::BindGroupLayout,
+        uniform_bind_group_layout: &wgpu::BindGroupLayout,
+        uniform_buffer: &wgpu::Buffer,
+    ) -> Scene {
+        let mut obj_models: Vec<Model> = Vec::new();
+        for model_path in MODELS.iter() {
+            obj_models.push(
+                model::Model::load(device, queue, texture_bind_group_layout, model_path).unwrap(),
+            );
+        }
         let mut models: Vec<ModelData> = Vec::new();
         let mut i: i32 = -1;
         for obj_model in obj_models {
@@ -308,7 +422,7 @@ impl App {
                 label: Some("instance buffer"),
             });
             let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &uniform_bind_group_layout,
+                layout: uniform_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
@@ -329,121 +443,36 @@ impl App {
                 uniform_bind_group,
             });
         }
-
-        let debug_uniform_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX,
-                        ty: wgpu::BindingType::UniformBuffer {
-                            dynamic: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-                label: Some("debug_uniform_bind_group_layout"),
-            });
-        let debug_render_pipeline = {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("debug pipeline"),
-                bind_group_layouts: &[&debug_uniform_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-            let vs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.vert.spv"));
-            let fs_module = device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.frag.spv"));
-            build_render_pipeline(&device, &layout, vs_module, fs_module)
-        };
-
-        let debug_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&[
-                SimpleVertex {
-                    position: [-30.0, 23.0, 25.0],
-                },
-                SimpleVertex {
-                    position: [256.0, -918.0, 302.0],
-                }
-            ]),
-            usage: wgpu::BufferUsage::VERTEX,
-        });
-        let index_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Debug Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsage::INDEX,
-        });
-        let debug_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &debug_uniform_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
-                },
-            ],
-            label: Some("debug_uniform_bind_group"),
-        });
-        let gui = GUI {
-            program_state,
-            fps_meter: fps::Meter::new(),
-            cursor_position: PhysicalPosition::new(0.0, 0.0),
-            debug,
-        };
-        let camera_state = CameraState {
-            camera,
-            camera_controller: CameraController::new(4.0, 0.4),
-            camera_mode: false,
-            projection,
-            cursor_watcher: CursorWatcher::new(),
-        };
-        let window = Window {
-            viewport,
-            surface,
-            window,
-            resized: false,
-        };
-        let rendering = Rendering {
-            swap_chain,
-            sc_desc,
-            render_pipeline,
-            queue,
-            device,
-            renderer,
-            depth_texture,
-            last_render_time: std::time::Instant::now(),
-            debug_render_pipeline,
-            light_render_pipeline,
-            uniforms,
-            uniform_buffer,
-            light_bind_group,
-            debug_buff,
-            index_buff,
-            debug_uniform_bind_group,
-        };
-        let scene = Scene {
-            model_data: models,
-        };
-
-        App {
-            window,
-            rendering,
-            gui,
-            camera_state,
-            scene,
-        }
+        Scene { model_data: models }
     }
+}
 
+pub struct App {
+    pub window: Window,
+    pub rendering: Rendering,
+    pub gui: GUI,
+    pub camera_state: CameraState,
+    pub scene: Scene,
+}
+
+impl App {
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        self.camera_state.projection.resize(new_size.width, new_size.height);
+        self.camera_state
+            .projection
+            .resize(new_size.width, new_size.height);
         // todo event
         self.rendering.sc_desc.width = new_size.width;
         self.rendering.sc_desc.height = new_size.height;
-        self.rendering.depth_texture =
-            Texture::create_depth_texture(&self.rendering.device, &self.rendering.sc_desc, "depth_texture");
-        self.rendering.swap_chain = self.rendering.device.create_swap_chain(&self.window.surface, &self.rendering.sc_desc);
+        self.rendering.depth_texture = Texture::create_depth_texture(
+            &self.rendering.device,
+            &self.rendering.sc_desc,
+            "depth_texture",
+        );
+        self.rendering.swap_chain = self
+            .rendering
+            .device
+            .create_swap_chain(&self.window.surface, &self.rendering.sc_desc);
     }
-
-
 
     pub fn render(&mut self) {
         let frame = self
@@ -453,12 +482,12 @@ impl App {
             .expect("Timeout getting texture")
             .output;
 
-        let mut encoder = self
-            .rendering
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+        let mut encoder =
+            self.rendering
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -521,7 +550,7 @@ impl App {
         }
 
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
-        let mouse_interaction = self.rendering.renderer.backend_mut().draw(
+        let mouse_interaction = self.gui.renderer.backend_mut().draw(
             &mut self.rendering.device,
             &mut staging_belt,
             &mut encoder,
@@ -530,16 +559,20 @@ impl App {
             self.gui.program_state.primitive(),
             &self.gui.debug.overlay(),
         );
-        self.window.window
+        self.window
+            .window
             .set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
         staging_belt.finish();
         self.rendering.queue.submit(iter::once(encoder.finish()));
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {
-        self.camera_state.camera_controller.update_camera(&mut self.camera_state.camera, dt);
+        self.camera_state
+            .camera_controller
+            .update_camera(&mut self.camera_state.camera, dt);
 
-        self.rendering.uniforms
+        self.rendering
+            .uniforms
             .update_view_proj(&self.camera_state.camera, &self.camera_state.projection);
         self.rendering.queue.write_buffer(
             &self.rendering.uniform_buffer,
@@ -564,25 +597,46 @@ impl App {
         }
 
         self.gui.fps_meter.push(dt);
-        self.gui.program_state
-            .queue_message(controls::Message::UpdateFps(self.gui.fps_meter.get_average()));
+        self.gui
+            .program_state
+            .queue_message(controls::Message::UpdateFps(
+                self.gui.fps_meter.get_average(),
+            ));
     }
 
     pub fn process_left_click(&mut self) {
         let click_coords = self.get_normalized_opengl_coords();
         let clip_coords = Vector4::new(click_coords.x, click_coords.y, -1.0, 1.0);
         // y is deviated by 2 for some reason
-        let click_world_coords = self.camera_state.camera.calc_matrix().invert().unwrap() * clip_coords;
-        let mut eye_coords = self.camera_state.projection.calc_matrix().invert().unwrap() * clip_coords;
+        let click_world_coords =
+            self.camera_state.camera.calc_matrix().invert().unwrap() * clip_coords;
+        let mut eye_coords =
+            self.camera_state.projection.calc_matrix().invert().unwrap() * clip_coords;
         eye_coords = Vector4::new(eye_coords.x, eye_coords.y, -1.0, 0.0);
-        let ray_world = (self.camera_state.camera.calc_matrix().invert().unwrap() * eye_coords).normalize();
-        let vec_start = SimpleVertex{ position: [click_world_coords.x, click_world_coords.y, click_world_coords.z] };
-        let vec_end = SimpleVertex{ position: [ray_world.x  * self.camera_state.projection.zfar, ray_world.y * self.camera_state.projection.zfar, ray_world.z * self.camera_state.projection.zfar] };
-        self.rendering.debug_buff = self.rendering.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&[vec_start, vec_end]),
-            usage: wgpu::BufferUsage::VERTEX,
-        });
+        let ray_world =
+            (self.camera_state.camera.calc_matrix().invert().unwrap() * eye_coords).normalize();
+        let vec_start = SimpleVertex {
+            position: [
+                click_world_coords.x,
+                click_world_coords.y,
+                click_world_coords.z,
+            ],
+        };
+        let vec_end = SimpleVertex {
+            position: [
+                ray_world.x * self.camera_state.projection.zfar,
+                ray_world.y * self.camera_state.projection.zfar,
+                ray_world.z * self.camera_state.projection.zfar,
+            ],
+        };
+        self.rendering.debug_buff =
+            self.rendering
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&[vec_start, vec_end]),
+                    usage: wgpu::BufferUsage::VERTEX,
+                });
         // self.program_state.queue_message(Message::DebugInfo(
         //     format!(
         //         "x {}, y {}, z {}\n",

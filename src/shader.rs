@@ -1,9 +1,9 @@
 use shaderc;
+use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::ffi::OsStr;
 
 const SPV_PATH: &str = "src/shader/spv";
 
@@ -27,14 +27,24 @@ fn compile_all(dir: &Path) {
 }
 
 fn compile_shader(file_path: &Path) {
-    let out = format!("{}/{}.spv", SPV_PATH, file_path.file_name().and_then(OsStr::to_str).unwrap());
+    let out = format!(
+        "{}/{}.spv",
+        SPV_PATH,
+        file_path.file_name().and_then(OsStr::to_str).unwrap()
+    );
     let shader_type = get_shader_king(file_path.extension().and_then(OsStr::to_str).unwrap());
     let mut compiler = shaderc::Compiler::new().unwrap();
     let mut options = shaderc::CompileOptions::new().unwrap();
     options.add_macro_definition("EP", Some("main"));
     let source = fs::read_to_string(file_path).expect("file doesn't exist");
     let frag = compiler
-        .compile_into_spirv(&source, shader_type, file_path.to_str().unwrap(), "main", Some(&options))
+        .compile_into_spirv(
+            &source,
+            shader_type,
+            file_path.to_str().unwrap(),
+            "main",
+            Some(&options),
+        )
         .unwrap();
     let mut file = File::create(out).unwrap();
     file.write_all(frag.as_binary_u8()).unwrap();
