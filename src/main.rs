@@ -3,6 +3,7 @@ extern crate log;
 mod buffer;
 mod camera;
 mod controls;
+mod event;
 mod instance;
 mod lighting;
 mod model;
@@ -13,7 +14,7 @@ mod widgets;
 mod shader;
 
 use iced_winit::winit::{event_loop::EventLoop, window::Window};
-use scene::State;
+use scene::App;
 
 pub fn main() {
     env_logger::init();
@@ -21,6 +22,8 @@ pub fn main() {
 
     let event_loop = EventLoop::new();
     let window = Window::new(&event_loop).unwrap();
-    let mut state = State::new(window);
-    event_loop.run(move |event, _, control_flow| state.process_events(&event, control_flow))
+    let mut app = App::new(window);
+    event_loop.run(
+        move |event, _, control_flow| event::processor::process_events(&mut app, &event, control_flow)
+    )
 }

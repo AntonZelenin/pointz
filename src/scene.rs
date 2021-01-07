@@ -1,8 +1,8 @@
 use crate::buffer::Uniforms;
-use crate::camera::{Camera, CameraController, Projection};
-use crate::controls::{Message, GUI};
+use crate::camera::{Camera, CameraController, Projection, CursorWatcher};
+use crate::controls;
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
-use crate::lighting::{DrawLight, Light};
+use crate::lighting::Light;
 use crate::model;
 use crate::model::{DrawModel, Model, ModelData, Vertex, SimpleVertex};
 use crate::texture::Texture;
@@ -17,53 +17,75 @@ use iced_winit::{conversion, futures, program, winit, Debug, Size};
 use std::iter;
 use std::time::Instant;
 use winit::dpi::PhysicalSize;
-use winit::event::{DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, WindowEvent};
-use winit::event_loop::ControlFlow;
-use winit::{dpi::PhysicalPosition, event::ModifiersState, window::Window};
-
-const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
+use winit::{dpi::PhysicalPosition};
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 const INDICES: &[u32] = &[0, 1];
 
-pub struct State {
-    viewport: Viewport,
-    surface: wgpu::Surface,
-    window: Window,
-    sc_desc: wgpu::SwapChainDescriptor,
-    swap_chain: wgpu::SwapChain,
-    render_pipeline: wgpu::RenderPipeline,
-    queue: wgpu::Queue,
-    device: wgpu::Device,
-    renderer: Renderer,
-    program_state: program::State<GUI>,
-    depth_texture: Texture,
-    model_data: Vec<ModelData>,
-    uniforms: Uniforms,
-    uniform_buffer: wgpu::Buffer,
-    camera: Camera,
-    projection: Projection,
-    camera_controller: CameraController,
-    last_frames_cursor_deltas: Vec<(f64, f64)>,
-    camera_mode: bool,
-    modifiers: ModifiersState,
-    cursor_position: PhysicalPosition<f64>,
-    resized: bool,
-    last_render_time: Instant,
-    debug: Debug,
-    light_bind_group: wgpu::BindGroup,
-    light_render_pipeline: wgpu::RenderPipeline,
-
+pub struct GUI {
+    pub program_state: program::State<controls::GUI>,
+    // todo keep a list of widgets, come up with a normal design
     fps_meter: fps::Meter,
-
-    debug_render_pipeline: wgpu::RenderPipeline,
-    debug_buff: wgpu::Buffer,
-    index_buff: wgpu::Buffer,
-    debug_uniform_bind_group: wgpu::BindGroup,
+    pub cursor_position: PhysicalPosition<f64>,
+    pub debug: Debug,
 }
 
-impl State {
-    pub fn new(window: winit::window::Window) -> State {
+pub struct CameraState {
+    camera: Camera,
+    pub camera_controller: CameraController,
+    pub camera_mode: bool,
+    projection: Projection,
+    pub cursor_watcher: CursorWatcher,
+}
+
+pub struct Window {
+    pub viewport: Viewport,
+    surface: wgpu::Surface,
+    pub window: winit::window::Window,
+    pub resized: bool,
+}
+
+pub struct Rendering {
+    sc_desc: wgpu::SwapChainDescriptor,
+    swap_chain: wgpu::SwapChain,
+
+    queue: wgpu::Queue,
+    device: wgpu::Device,
+
+    pub renderer: Renderer,
+
+    render_pipeline: wgpu::RenderPipeline,
+    debug_render_pipeline: wgpu::RenderPipeline,
+    light_render_pipeline: wgpu::RenderPipeline,
+
+    uniforms: Uniforms,
+    uniform_buffer: wgpu::Buffer,
+    debug_buff: wgpu::Buffer,
+    index_buff: wgpu::Buffer,
+
+    light_bind_group: wgpu::BindGroup,
+    debug_uniform_bind_group: wgpu::BindGroup,
+
+    // todo move
+    depth_texture: Texture,
+    pub last_render_time: Instant,
+}
+
+struct Scene {
+    model_data: Vec<ModelData>,
+}
+
+
+pub struct App {
+    pub window: Window,
+    pub rendering: Rendering,
+    pub gui: GUI,
+    pub camera_state: CameraState,
+    scene: Scene,
+}
+
+impl App {
+    pub fn new(window: winit::window::Window) -> App {
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
         let surface = unsafe { instance.create_surface(&window) };
         let (mut device, queue) = futures::executor::block_on(async {
@@ -201,16 +223,15 @@ impl State {
             label: None,
         });
 
-        let physical_size = window.inner_size();
         let viewport = Viewport::with_physical_size(
-            Size::new(physical_size.width, physical_size.height),
+            Size::new(window.inner_size().width, window.inner_size().height),
             window.scale_factor(),
         );
 
         let mut debug = Debug::new();
         let mut renderer = iced_wgpu::Renderer::new(Backend::new(&mut device, Settings::default()));
-        let state = program::State::new(
-            GUI::new(),
+        let program_state = program::State::new(
+            controls::GUI::new(),
             viewport.logical_size(),
             conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), viewport.scale_factor()),
             &mut renderer,
@@ -362,182 +383,78 @@ impl State {
             ],
             label: Some("debug_uniform_bind_group"),
         });
-
-        State {
+        let gui = GUI {
+            program_state,
+            fps_meter: fps::Meter::new(),
+            cursor_position: PhysicalPosition::new(0.0, 0.0),
+            debug,
+        };
+        let camera_state = CameraState {
+            camera,
+            camera_controller: CameraController::new(4.0, 0.4),
+            camera_mode: false,
+            projection,
+            cursor_watcher: CursorWatcher::new(),
+        };
+        let window = Window {
             viewport,
             surface,
             window,
+            resized: false,
+        };
+        let rendering = Rendering {
             swap_chain,
             sc_desc,
             render_pipeline,
             queue,
             device,
             renderer,
-            program_state: state,
             depth_texture,
-            model_data: models,
+            last_render_time: std::time::Instant::now(),
+            debug_render_pipeline,
+            light_render_pipeline,
             uniforms,
             uniform_buffer,
-            camera,
-            projection,
-            camera_controller: CameraController::new(4.0, 0.4),
-            last_frames_cursor_deltas: Vec::with_capacity(3),
-            camera_mode: false,
-            modifiers: ModifiersState::default(),
-            cursor_position: PhysicalPosition::new(0.0, 0.0),
-            resized: false,
-            last_render_time: std::time::Instant::now(),
-            debug,
             light_bind_group,
-            light_render_pipeline,
-            fps_meter: fps::Meter::new(),
-            debug_render_pipeline,
             debug_buff,
             index_buff,
             debug_uniform_bind_group,
-        }
-    }
-
-    fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        self.projection.resize(new_size.width, new_size.height);
-        self.sc_desc.width = new_size.width;
-        self.sc_desc.height = new_size.height;
-        self.depth_texture =
-            Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
-        self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
-    }
-
-    pub fn process_events(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
-        match event {
-            Event::WindowEvent { event, .. } => {
-                match event {
-                    WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                virtual_keycode: Some(key),
-                                state,
-                                ..
-                            },
-                        ..
-                    } => {
-                        self.camera_controller.process_keyboard(*key, *state);
-                    }
-                    WindowEvent::MouseWheel { delta, .. } => {
-                        self.camera_controller.process_scroll(delta);
-                    }
-                    WindowEvent::MouseInput {
-                        button: MouseButton::Right,
-                        state,
-                        ..
-                    } => {
-                        self.camera_mode = *state == ElementState::Pressed;
-                        self.window.set_cursor_visible(!self.camera_mode);
-                    }
-                    WindowEvent::MouseInput {
-                        button: MouseButton::Left,
-                        state,
-                        ..
-                    } => {
-                        if *state == ElementState::Pressed {
-                            self.process_left_click();
-                        }
-                    }
-                    WindowEvent::CursorMoved { position, .. } => {
-                        if self.camera_mode {
-                            // make cursor stay at the same place
-                            self.window
-                                .set_cursor_position(self.cursor_position)
-                                .unwrap();
-                        } else {
-                            self.cursor_position = *position;
-                        }
-                    }
-                    WindowEvent::ModifiersChanged(new_modifiers) => {
-                        self.modifiers = *new_modifiers;
-                    }
-                    WindowEvent::Resized(new_size) => {
-                        self.viewport = Viewport::with_physical_size(
-                            Size::new(new_size.width, new_size.height),
-                            self.window.scale_factor(),
-                        );
-                        self.resized = true;
-                    }
-                    WindowEvent::CloseRequested => {
-                        *control_flow = ControlFlow::Exit;
-                    }
-                    _ => {}
-                }
-                if let Some(event) = iced_winit::conversion::window_event(
-                    &event,
-                    self.window.scale_factor(),
-                    self.modifiers,
-                ) {
-                    self.program_state.queue_event(event);
-                }
-            }
-            Event::MainEventsCleared => {
-                if !self.program_state.is_queue_empty() {
-                    let _ = self.program_state.update(
-                        self.viewport.logical_size(),
-                        conversion::cursor_position(
-                            self.cursor_position,
-                            self.viewport.scale_factor(),
-                        ),
-                        None,
-                        &mut self.renderer,
-                        &mut self.debug,
-                    );
-                }
-                self.window.request_redraw();
-            }
-            Event::RedrawRequested(_) => {
-                let now = std::time::Instant::now();
-                let dt = now - self.last_render_time;
-                self.last_render_time = now;
-                self.update(dt);
-                if self.resized {
-                    self.resize(self.window.inner_size());
-                    self.resized = false;
-                }
-                self.render();
-            }
-            Event::DeviceEvent { event, .. } => match event {
-                DeviceEvent::MouseMotion { delta } => {
-                    if self.last_frames_cursor_deltas.len() > KEEP_CURSOR_POS_FOR_NUM_FRAMES {
-                        self.last_frames_cursor_deltas.drain(..1);
-                    }
-                    self.last_frames_cursor_deltas.push(*delta);
-                    let (mouse_dx, mouse_dy) = self.get_avg_cursor_pos();
-                    if self.camera_mode {
-                        self.camera_controller
-                            .process_mouse(mouse_dx / 2.0, mouse_dy / 2.0);
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
         };
-    }
+        let scene = Scene {
+            model_data: models,
+        };
 
-    fn get_avg_cursor_pos(&self) -> (f64, f64) {
-        let mut avg_dx = 0.0;
-        let mut avg_dy = 0.0;
-        for (x, y) in self.last_frames_cursor_deltas.iter() {
-            avg_dx += x;
-            avg_dy += y;
+        App {
+            window,
+            rendering,
+            gui,
+            camera_state,
+            scene,
         }
-        let size = self.last_frames_cursor_deltas.len() as f64;
-        (avg_dx / size, avg_dy / size)
     }
 
-    fn render(&mut self) {
+    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+        self.camera_state.projection.resize(new_size.width, new_size.height);
+        // todo event
+        self.rendering.sc_desc.width = new_size.width;
+        self.rendering.sc_desc.height = new_size.height;
+        self.rendering.depth_texture =
+            Texture::create_depth_texture(&self.rendering.device, &self.rendering.sc_desc, "depth_texture");
+        self.rendering.swap_chain = self.rendering.device.create_swap_chain(&self.window.surface, &self.rendering.sc_desc);
+    }
+
+
+
+    pub fn render(&mut self) {
         let frame = self
+            .rendering
             .swap_chain
             .get_current_frame()
             .expect("Timeout getting texture")
             .output;
 
         let mut encoder = self
+            .rendering
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
@@ -551,6 +468,7 @@ impl State {
                     ops: wgpu::Operations {
                         load: {
                             let [r, g, b, a] = self
+                                .gui
                                 .program_state
                                 .program()
                                 .background_color()
@@ -566,7 +484,7 @@ impl State {
                     },
                 }],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                    attachment: &self.depth_texture.view,
+                    attachment: &self.rendering.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: true,
@@ -585,51 +503,51 @@ impl State {
             //     &self.light_bind_group,
             // );
 
-            render_pass.set_pipeline(&self.render_pipeline);
-            for model_data in &mut self.model_data {
+            render_pass.set_pipeline(&self.rendering.render_pipeline);
+            for model_data in &mut self.scene.model_data {
                 render_pass.draw_model_instanced(
                     &model_data.model,
                     0..model_data.instances.len() as u32,
                     &model_data.uniform_bind_group,
-                    &self.light_bind_group,
+                    &self.rendering.light_bind_group,
                 );
             }
 
-            render_pass.set_pipeline(&self.debug_render_pipeline);
-            render_pass.set_vertex_buffer(0, self.debug_buff.slice(..));
-            render_pass.set_index_buffer(self.index_buff.slice(..));
-            render_pass.set_bind_group(0, &self.debug_uniform_bind_group, &[]);
+            render_pass.set_pipeline(&self.rendering.debug_render_pipeline);
+            render_pass.set_vertex_buffer(0, self.rendering.debug_buff.slice(..));
+            render_pass.set_index_buffer(self.rendering.index_buff.slice(..));
+            render_pass.set_bind_group(0, &self.rendering.debug_uniform_bind_group, &[]);
             render_pass.draw_indexed(0..2, 0, 0..1);
         }
 
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
-        let mouse_interaction = self.renderer.backend_mut().draw(
-            &mut self.device,
+        let mouse_interaction = self.rendering.renderer.backend_mut().draw(
+            &mut self.rendering.device,
             &mut staging_belt,
             &mut encoder,
             &frame.view,
-            &self.viewport,
-            self.program_state.primitive(),
-            &self.debug.overlay(),
+            &self.window.viewport,
+            self.gui.program_state.primitive(),
+            &self.gui.debug.overlay(),
         );
-        self.window
+        self.window.window
             .set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
         staging_belt.finish();
-        self.queue.submit(iter::once(encoder.finish()));
+        self.rendering.queue.submit(iter::once(encoder.finish()));
     }
 
-    fn update(&mut self, dt: std::time::Duration) {
-        self.camera_controller.update_camera(&mut self.camera, dt);
+    pub fn update(&mut self, dt: std::time::Duration) {
+        self.camera_state.camera_controller.update_camera(&mut self.camera_state.camera, dt);
 
-        self.uniforms
-            .update_view_proj(&self.camera, &self.projection);
-        self.queue.write_buffer(
-            &self.uniform_buffer,
+        self.rendering.uniforms
+            .update_view_proj(&self.camera_state.camera, &self.camera_state.projection);
+        self.rendering.queue.write_buffer(
+            &self.rendering.uniform_buffer,
             0,
-            bytemuck::cast_slice(&[self.uniforms]),
+            bytemuck::cast_slice(&[self.rendering.uniforms]),
         );
 
-        for model_data in &mut self.model_data {
+        for model_data in &mut self.scene.model_data {
             for instance in &mut model_data.instances {
                 instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
             }
@@ -638,29 +556,29 @@ impl State {
                 .iter()
                 .map(Instance::to_raw)
                 .collect::<Vec<_>>();
-            self.queue.write_buffer(
+            self.rendering.queue.write_buffer(
                 &model_data.instance_buffer,
                 0,
                 bytemuck::cast_slice(&instance_data),
             );
         }
 
-        self.fps_meter.push(dt);
-        self.program_state
-            .queue_message(Message::UpdateFps(self.fps_meter.get_average()));
+        self.gui.fps_meter.push(dt);
+        self.gui.program_state
+            .queue_message(controls::Message::UpdateFps(self.gui.fps_meter.get_average()));
     }
 
-    fn process_left_click(&mut self) {
+    pub fn process_left_click(&mut self) {
         let click_coords = self.get_normalized_opengl_coords();
         let clip_coords = Vector4::new(click_coords.x, click_coords.y, -1.0, 1.0);
         // y is deviated by 2 for some reason
-        let click_world_coords = self.camera.calc_matrix().invert().unwrap() * clip_coords;
-        let mut eye_coords = self.projection.calc_matrix().invert().unwrap() * clip_coords;
+        let click_world_coords = self.camera_state.camera.calc_matrix().invert().unwrap() * clip_coords;
+        let mut eye_coords = self.camera_state.projection.calc_matrix().invert().unwrap() * clip_coords;
         eye_coords = Vector4::new(eye_coords.x, eye_coords.y, -1.0, 0.0);
-        let ray_world = (self.camera.calc_matrix().invert().unwrap() * eye_coords).normalize();
+        let ray_world = (self.camera_state.camera.calc_matrix().invert().unwrap() * eye_coords).normalize();
         let vec_start = SimpleVertex{ position: [click_world_coords.x, click_world_coords.y, click_world_coords.z] };
-        let vec_end = SimpleVertex{ position: [ray_world.x  * self.projection.zfar, ray_world.y * self.projection.zfar, ray_world.z * self.projection.zfar] };
-        self.debug_buff = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let vec_end = SimpleVertex{ position: [ray_world.x  * self.camera_state.projection.zfar, ray_world.y * self.camera_state.projection.zfar, ray_world.z * self.camera_state.projection.zfar] };
+        self.rendering.debug_buff = self.rendering.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&[vec_start, vec_end]),
             usage: wgpu::BufferUsage::VERTEX,
@@ -679,8 +597,8 @@ impl State {
     fn get_normalized_opengl_coords(&self) -> Vector2<f32> {
         // convert mouse position to opengl coords
         Vector2::new(
-            (2.0 * self.cursor_position.x as f32) / self.sc_desc.width as f32 - 1.0,
-            -(2.0 * self.cursor_position.y as f32) / self.sc_desc.height as f32 - 1.0,
+            (2.0 * self.gui.cursor_position.x as f32) / self.rendering.sc_desc.width as f32 - 1.0,
+            -(2.0 * self.gui.cursor_position.y as f32) / self.rendering.sc_desc.height as f32 - 1.0,
         )
     }
 }

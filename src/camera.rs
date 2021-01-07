@@ -34,7 +34,7 @@ impl Camera {
 
     pub fn calc_matrix(&self) -> Matrix4<f32> {
         // todo it cannot look too high or too low
-        Matrix4::look_at_dir(
+        Matrix4::look_to_rh(
             self.position,
             Vector3::new(self.yaw.0.cos(), self.pitch.0.sin(), self.yaw.0.sin()).normalize(),
             Vector3::unit_y(),
@@ -176,5 +176,28 @@ impl CameraController {
         } else if camera.pitch > Rad(FRAC_PI_2) {
             camera.pitch = Rad(FRAC_PI_2);
         }
+    }
+}
+
+pub struct CursorWatcher {
+    pub last_frames_cursor_deltas: Vec<(f64, f64)>,
+}
+
+impl CursorWatcher {
+    pub fn new() -> CursorWatcher {
+        CursorWatcher {
+            last_frames_cursor_deltas: Vec::with_capacity(3),
+        }
+    }
+
+    pub fn get_avg_cursor_pos(&self) -> (f64, f64) {
+        let mut avg_dx = 0.0;
+        let mut avg_dy = 0.0;
+        for (x, y) in self.last_frames_cursor_deltas.iter() {
+            avg_dx += x;
+            avg_dy += y;
+        }
+        let size = self.last_frames_cursor_deltas.len() as f64;
+        (avg_dx / size, avg_dy / size)
     }
 }
