@@ -10,13 +10,15 @@ mod model;
 mod primitives;
 mod scene;
 mod shader;
+mod drawer;
 mod texture;
 mod widgets;
 
-use crate::scene::{CameraState, Rendering, Scene, Window, GUI};
 use iced_wgpu::wgpu;
 use iced_winit::winit::event_loop::EventLoop;
 use scene::App;
+use crate::scene::{CameraState, Scene, Window, GUI};
+use crate::drawer::render::Rendering;
 
 pub fn main() {
     env_logger::init();

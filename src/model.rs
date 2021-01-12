@@ -185,6 +185,7 @@ impl Material {
         normal_texture: texture::Texture,
         layout: &wgpu::BindGroupLayout,
     ) -> Self {
+        // todo store BindGroupDescriptor, create bind group where needed
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout,
             entries: &[

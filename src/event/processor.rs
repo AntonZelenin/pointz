@@ -108,7 +108,7 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                 app.resize(app.window.window.inner_size());
                 app.window.resized = false;
             }
-            app.render();
+            app.rendering.render(app);
         }
         Event::DeviceEvent { event, .. } => match event {
             DeviceEvent::MouseMotion { delta } => {
