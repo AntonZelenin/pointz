@@ -1,5 +1,6 @@
 use crate::camera::{Camera, CameraController, CursorWatcher, Projection};
 use crate::controls;
+use crate::drawer::render::Rendering;
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::model;
 use crate::model::{Model, ModelData, SimpleVertex};
@@ -15,7 +16,6 @@ use iced_winit::winit::window;
 use iced_winit::{conversion, program, winit, Debug, Size};
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
-use crate::drawer::render::{Renderable, Drawer, ModelDrawer, Rendering, DebugDrawer, build_render_pipeline};
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
@@ -58,10 +58,10 @@ pub struct CameraState {
 }
 
 impl CameraState {
-    pub fn new(sc_desc: &wgpu::SwapChainDescriptor) -> CameraState {
+    pub fn new(width: u32, height: u32) -> CameraState {
         let camera = Camera::new(Point3::new(-30.0, 25.0, 25.0), Deg(0.0), Deg(-40.0));
         let camera_controller = CameraController::new(4.0, 0.4);
-        let projection = Projection::new(sc_desc.width, sc_desc.height, Deg(50.0), 0.1, 1000.0);
+        let projection = Projection::new(width, height, Deg(50.0), 0.1, 1000.0);
         CameraState {
             camera,
             camera_controller,
@@ -102,18 +102,85 @@ pub struct Scene {
     pub model_data: Vec<ModelData>,
 }
 
+// impl Scene {
+//     pub fn new(
+//         device: &wgpu::Device,
+//         queue: &wgpu::Queue,
+//         texture_bind_group_layout: &wgpu::BindGroupLayout,
+//         uniform_bind_group_layout: &wgpu::BindGroupLayout,
+//         uniform_buffer: &wgpu::Buffer,
+//     ) -> Scene {
+//         let mut obj_models: Vec<Model> = Vec::new();
+//         for model_path in MODELS.iter() {
+//             obj_models.push(
+//                 model::Model::load(device, queue, texture_bind_group_layout, model_path).unwrap(),
+//             );
+//         }
+//         let mut models: Vec<ModelData> = Vec::new();
+//         let mut i: i32 = -1;
+//         for obj_model in obj_models {
+//             i += 1;
+//             let instances = (0..NUM_ROWS)
+//                 .flat_map(|z| {
+//                     (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+//                         let position = Vector3 {
+//                             x: (x * 6) as f32,
+//                             y: 0.0,
+//                             // * i * 30 just to move the second model next to the first model to showcase
+//                             z: (z * 6 + i as u32 * 30) as f32,
+//                         } - INSTANCE_DISPLACEMENT;
+//                         let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0));
+//                         // let rotation = if position.is_zero() {
+//                         //     this is needed so an object at (0, 0, 0) won't get scaled to zero
+//                         //     as Quaternions can effect scale if they're not created correctly
+//                         //     Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
+//                         // } else {
+//                         //     Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
+//                         // };
+//
+//                         Instance { position, rotation }
+//                     })
+//                 })
+//                 .collect::<Vec<_>>();
+//
+//             // let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+//             // let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+//             //     contents: bytemuck::cast_slice(&instance_data),
+//             //     usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
+//             //     label: Some("instance buffer"),
+//             // });
+//             // let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+//             //     layout: uniform_bind_group_layout,
+//             //     entries: &[
+//             //         wgpu::BindGroupEntry {
+//             //             binding: 0,
+//             //             resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
+//             //         },
+//             //         wgpu::BindGroupEntry {
+//             //             binding: 1,
+//             //             resource: wgpu::BindingResource::Buffer(instance_buffer.slice(..)),
+//             //         },
+//             //     ],
+//             //     label: Some("uniform_bind_group"),
+//             // });
+//
+//             models.push(ModelData {
+//                 model: obj_model,
+//                 instances,
+//                 // instance_buffer,
+//                 // uniform_bind_group,
+//             });
+//         }
+//         Scene { model_data: models }
+//     }
+// }
+
 impl Scene {
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        texture_bind_group_layout: &wgpu::BindGroupLayout,
-        uniform_bind_group_layout: &wgpu::BindGroupLayout,
-        uniform_buffer: &wgpu::Buffer,
-    ) -> Scene {
+    pub fn new() -> Scene {
         let mut obj_models: Vec<Model> = Vec::new();
         for model_path in MODELS.iter() {
             obj_models.push(
-                model::Model::load(device, queue, texture_bind_group_layout, model_path).unwrap(),
+                model::Model::load(model_path).unwrap(),
             );
         }
         let mut models: Vec<ModelData> = Vec::new();
@@ -143,32 +210,9 @@ impl Scene {
                 })
                 .collect::<Vec<_>>();
 
-            let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-            let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
-                label: Some("instance buffer"),
-            });
-            let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: uniform_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Buffer(instance_buffer.slice(..)),
-                    },
-                ],
-                label: Some("uniform_bind_group"),
-            });
-
             models.push(ModelData {
                 model: obj_model,
                 instances,
-                instance_buffer,
-                uniform_bind_group,
             });
         }
         Scene { model_data: models }
@@ -291,77 +335,8 @@ impl App {
             -(2.0 * self.gui.cursor_position.y as f32) / self.rendering.sc_desc.height as f32 - 1.0,
         )
     }
-}
 
-// impl Renderable for &mut App {
-//     fn get_drawers(&self, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> Vec<Box<dyn Drawer + '_>> {
-//         let mut drawers: Vec<Box<dyn Drawer>> = Vec::new();
-//         drawers.push(Box::new(ModelDrawer {
-//             render_pipeline: &self.rendering.render_pipeline,
-//             model_data: &self.scene.model_data,
-//             light_bind_group: &self.rendering.light_bind_group,
-//         }));
-//         // todo bad idea to create bind group and pipeline every frame
-//         let debug_uniform_bind_group_layout =
-//             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-//                 entries: &[wgpu::BindGroupLayoutEntry {
-//                     binding: 0,
-//                     visibility: wgpu::ShaderStage::VERTEX,
-//                     ty: wgpu::BindingType::UniformBuffer {
-//                         dynamic: false,
-//                         min_binding_size: None,
-//                     },
-//                     count: None,
-//                 }],
-//                 label: Some("debug_uniform_bind_group_layout"),
-//             });
-//         let debug_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-//             layout: &debug_uniform_bind_group_layout,
-//             entries: &[wgpu::BindGroupEntry {
-//                 binding: 0,
-//                 resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
-//             }],
-//             label: Some("debug_uniform_bind_group"),
-//         });
-//         let debug_render_pipeline = {
-//             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-//                 label: Some("debug pipeline"),
-//                 bind_group_layouts: &[&debug_uniform_bind_group_layout],
-//                 push_constant_ranges: &[],
-//             });
-//             let vs_module =
-//                 device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.vert.spv"));
-//             let fs_module =
-//                 device.create_shader_module(wgpu::include_spirv!("shader/spv/debug.frag.spv"));
-//             build_render_pipeline(&device, &layout, vs_module, fs_module)
-//         };
-//         let debug_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-//             label: Some("Vertex Buffer"),
-//             contents: bytemuck::cast_slice(&[
-//                 SimpleVertex {
-//                     position: [-30.0, 23.0, 25.0],
-//                 },
-//                 SimpleVertex {
-//                     position: [256.0, -918.0, 302.0],
-//                 },
-//             ]),
-//             usage: wgpu::BufferUsage::VERTEX,
-//         });
-//         const INDICES: &[u32] = &[0, 1];
-//         let debug_index_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-//             label: Some("Debug Index Buffer"),
-//             contents: bytemuck::cast_slice(INDICES),
-//             usage: wgpu::BufferUsage::INDEX,
-//         });
-//         drawers.push(Box::new(
-//             DebugDrawer {
-//                 render_pipeline: debug_render_pipeline,
-//                 // todo why should I keep it in rendering if it's needed only in the debug drawer? check similar
-//                 vertex_buff: debug_buff,
-//                 index_buff:debug_index_buff,
-//                 uniform_bind_group: debug_uniform_bind_group,
-//             }
-//         ));
-//         drawers
-//     }
-// }
+    pub fn render(&mut self) {
+        self.rendering.render();
+    }
+}

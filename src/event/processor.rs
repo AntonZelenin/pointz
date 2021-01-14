@@ -8,7 +8,11 @@ use iced_winit::{conversion, Size};
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
-pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut ControlFlow) {
+pub fn process_events(
+    app: &mut App,
+    event: &Event<()>,
+    control_flow: &mut ControlFlow,
+) {
     match event {
         Event::WindowEvent { event, .. } => {
             let mut modifiers = ModifiersState::default();
@@ -108,7 +112,7 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                 app.resize(app.window.window.inner_size());
                 app.window.resized = false;
             }
-            app.rendering.render(app);
+            app.render();
         }
         Event::DeviceEvent { event, .. } => match event {
             DeviceEvent::MouseMotion { delta } => {

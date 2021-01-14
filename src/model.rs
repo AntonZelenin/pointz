@@ -2,8 +2,6 @@ use crate::instance::Instance;
 use crate::texture;
 use anyhow::*;
 use iced_wgpu::wgpu;
-use iced_wgpu::wgpu::util::DeviceExt;
-use iced_wgpu::wgpu::BindGroup;
 use std::ops::Range;
 use std::path::Path;
 
@@ -34,25 +32,149 @@ impl Vertex for SimpleVertex {
     }
 }
 
+// pub struct ModelData {
+//     pub model: Model,
+//     pub instances: Vec<Instance>,
+// pub instance_buffer: wgpu::Buffer,
+// pub uniform_bind_group: BindGroup,
+// }
+
+pub struct ModelData {
+    pub model: Model,
+    pub instances: Vec<Instance>,
+}
+
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
 }
 
-pub struct ModelData {
-    pub model: Model,
-    pub instances: Vec<Instance>,
-    pub instance_buffer: wgpu::Buffer,
-    pub uniform_bind_group: BindGroup,
-}
+// impl Model {
+//     pub fn load<P: AsRef<Path>>(
+//         device: &wgpu::Device,
+//         queue: &wgpu::Queue,
+//         layout: &wgpu::BindGroupLayout,
+//         path: P,
+//     ) -> Result<Self> {
+//         let (obj_models, obj_materials) = tobj::load_obj(path.as_ref(), true)?;
+// 
+//         // We're assuming that the texture files are stored with the obj file
+//         let containing_folder = path.as_ref().parent().unwrap();
+// 
+//         let mut materials = Vec::new();
+//         for mat in obj_materials {
+//             let diffuse_path = mat.diffuse_texture;
+//             let diffuse_texture =
+//                 texture::Texture::load(device, queue, containing_folder.join(diffuse_path), false)?;
+// 
+//             let normal_path = mat.normal_texture;
+//             let normal_texture =
+//                 texture::Texture::load(device, queue, containing_folder.join(normal_path), true)?;
+// 
+//             materials.push(Material::new(
+//                 device,
+//                 &mat.name,
+//                 diffuse_texture,
+//                 normal_texture,
+//                 layout,
+//             ));
+//         }
+// 
+//         let mut meshes = Vec::new();
+//         for m in obj_models {
+//             let mut vertices = Vec::new();
+//             for i in 0..m.mesh.positions.len() / 3 {
+//                 vertices.push(ModelVertex {
+//                     position: [
+//                         m.mesh.positions[i * 3],
+//                         m.mesh.positions[i * 3 + 1],
+//                         m.mesh.positions[i * 3 + 2],
+//                     ]
+//                     .into(),
+//                     tex_coords: [m.mesh.texcoords[i * 2], m.mesh.texcoords[i * 2 + 1]].into(),
+//                     normal: [
+//                         m.mesh.normals[i * 3],
+//                         m.mesh.normals[i * 3 + 1],
+//                         m.mesh.normals[i * 3 + 2],
+//                     ]
+//                     .into(),
+//                     tangent: [0.0; 3].into(),
+//                     bitangent: [0.0; 3].into(),
+//                 });
+//             }
+// 
+//             let indices = &m.mesh.indices;
+// 
+//             // Calculate tangents and bitangets. We're going to
+//             // use the triangles, so we need to loop through the
+//             // indices in chunks of 3
+//             for c in indices.chunks(3) {
+//                 let v0 = vertices[c[0] as usize];
+//                 let v1 = vertices[c[1] as usize];
+//                 let v2 = vertices[c[2] as usize];
+// 
+//                 let pos0 = v0.position;
+//                 let pos1 = v1.position;
+//                 let pos2 = v2.position;
+// 
+//                 let uv0 = v0.tex_coords;
+//                 let uv1 = v1.tex_coords;
+//                 let uv2 = v2.tex_coords;
+// 
+//                 // Calculate the edges of the triangle
+//                 let delta_pos1 = pos1 - pos0;
+//                 let delta_pos2 = pos2 - pos0;
+// 
+//                 // This will give us a direction to calculate the
+//                 // tangent and bitangent
+//                 let delta_uv1 = uv1 - uv0;
+//                 let delta_uv2 = uv2 - uv0;
+// 
+//                 // Solving the following system of equations will
+//                 // give us the tangent and bitangent.
+//                 //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
+//                 //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
+//                 // Luckily, the place I found this equation provided
+//                 // the solution!
+//                 let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+//                 let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+//                 let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+// 
+//                 // We'll use the same tangent/bitangent for each vertex in the triangle
+//                 vertices[c[0] as usize].tangent = tangent;
+//                 vertices[c[1] as usize].tangent = tangent;
+//                 vertices[c[2] as usize].tangent = tangent;
+// 
+//                 vertices[c[0] as usize].bitangent = bitangent;
+//                 vertices[c[1] as usize].bitangent = bitangent;
+//                 vertices[c[2] as usize].bitangent = bitangent;
+//             }
+// 
+//             let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+//                 contents: bytemuck::cast_slice(&vertices),
+//                 usage: wgpu::BufferUsage::VERTEX,
+//                 label: Some("vertex buffer"),
+//             });
+//             let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+//                 contents: bytemuck::cast_slice(&m.mesh.indices),
+//                 usage: wgpu::BufferUsage::INDEX,
+//                 label: Some("index buffer"),
+//             });
+//             meshes.push(Mesh {
+//                 name: m.name,
+//                 vertex_buffer,
+//                 index_buffer,
+//                 num_elements: m.mesh.indices.len() as u32,
+//                 material: m.mesh.material_id.unwrap_or(0),
+//             });
+//         }
+// 
+//         Ok(Self { meshes, materials })
+//     }
+// }
 
 impl Model {
-    pub fn load<P: AsRef<Path>>(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        layout: &wgpu::BindGroupLayout,
-        path: P,
-    ) -> Result<Self> {
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let (obj_models, obj_materials) = tobj::load_obj(path.as_ref(), true)?;
 
         // We're assuming that the texture files are stored with the obj file
@@ -62,18 +184,16 @@ impl Model {
         for mat in obj_materials {
             let diffuse_path = mat.diffuse_texture;
             let diffuse_texture =
-                texture::Texture::load(device, queue, containing_folder.join(diffuse_path), false)?;
+                texture::Texture::load(containing_folder.join(diffuse_path), false)?;
 
             let normal_path = mat.normal_texture;
             let normal_texture =
-                texture::Texture::load(device, queue, containing_folder.join(normal_path), true)?;
+                texture::Texture::load(containing_folder.join(normal_path), true)?;
 
             materials.push(Material::new(
-                device,
                 &mat.name,
                 diffuse_texture,
                 normal_texture,
-                layout,
             ));
         }
 
@@ -146,23 +266,12 @@ impl Model {
                 vertices[c[1] as usize].bitangent = bitangent;
                 vertices[c[2] as usize].bitangent = bitangent;
             }
-
-            let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsage::VERTEX,
-                label: Some("vertex buffer"),
-            });
-            let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                contents: bytemuck::cast_slice(&m.mesh.indices),
-                usage: wgpu::BufferUsage::INDEX,
-                label: Some("index buffer"),
-            });
+            
             meshes.push(Mesh {
                 name: m.name,
-                vertex_buffer,
-                index_buffer,
-                num_elements: m.mesh.indices.len() as u32,
-                material: m.mesh.material_id.unwrap_or(0),
+                vertices,
+                indexes: m.mesh.indices,
+                material_id: m.mesh.material_id.unwrap_or(0),
             });
         }
 
@@ -170,60 +279,87 @@ impl Model {
     }
 }
 
+// pub struct Material {
+//     pub name: String,
+//     pub diffuse_texture: texture::Texture,
+//     pub normal_texture: texture::Texture,
+//     pub bind_group: wgpu::BindGroup,
+// }
+// 
+// impl Material {
+//     pub fn new(
+//         device: &wgpu::Device,
+//         name: &str,
+//         diffuse_texture: texture::Texture,
+//         normal_texture: texture::Texture,
+//         layout: &wgpu::BindGroupLayout,
+//     ) -> Self {
+//         // todo store BindGroupDescriptor, create bind group where needed
+//         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+//             layout,
+//             entries: &[
+//                 wgpu::BindGroupEntry {
+//                     binding: 0,
+//                     resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+//                 },
+//                 wgpu::BindGroupEntry {
+//                     binding: 1,
+//                     resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+//                 },
+//                 wgpu::BindGroupEntry {
+//                     binding: 2,
+//                     resource: wgpu::BindingResource::TextureView(&normal_texture.view),
+//                 },
+//                 wgpu::BindGroupEntry {
+//                     binding: 3,
+//                     resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
+//                 },
+//             ],
+//             label: Some(name),
+//         });
+// 
+//         Self {
+//             name: String::from(name),
+//             diffuse_texture,
+//             normal_texture,
+//             bind_group,
+//         }
+//     }
+// }
+
 pub struct Material {
-    // pub name: String,
-    // pub diffuse_texture: texture::Texture,
-    // pub normal_texture: texture::Texture,
-    pub bind_group: wgpu::BindGroup,
+    pub name: String,
+    pub diffuse_texture: texture::Texture,
+    pub normal_texture: texture::Texture,
 }
 
 impl Material {
     pub fn new(
-        device: &wgpu::Device,
         name: &str,
         diffuse_texture: texture::Texture,
         normal_texture: texture::Texture,
-        layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        // todo store BindGroupDescriptor, create bind group where needed
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&normal_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
-                },
-            ],
-            label: Some(name),
-        });
-
         Self {
-            // name: String::from(name),
-            // diffuse_texture,
-            // normal_texture,
-            bind_group,
+            name: String::from(name),
+            diffuse_texture,
+            normal_texture,
         }
     }
 }
 
+// pub struct Mesh {
+//     pub name: String,
+//     pub vertex_buffer: wgpu::Buffer,
+//     pub index_buffer: wgpu::Buffer,
+//     pub num_elements: u32,
+//     pub material: usize,
+// }
+
 pub struct Mesh {
     pub name: String,
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
-    pub num_elements: u32,
-    pub material: usize,
+    pub vertices: Vec<ModelVertex>,
+    pub indexes: Vec<u32>,
+    pub material_id: usize,
 }
 
 #[repr(C)]
@@ -365,7 +501,7 @@ where
         light: &'b wgpu::BindGroup,
     ) {
         for mesh in &model.meshes {
-            let material = &model.materials[mesh.material];
+            let material = &model.materials[mesh.material_id];
             self.draw_mesh_instanced(mesh, material, instances.clone(), uniforms, light);
         }
     }

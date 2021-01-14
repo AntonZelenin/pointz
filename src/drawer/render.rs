@@ -1,27 +1,25 @@
-use iced_wgpu::wgpu;
-use crate::scene::Window;
-use crate::texture::Texture;
-use iced_winit::{futures, Color};
-use std::time::Instant;
 use crate::buffer::Uniforms;
 use crate::lighting::Light;
+use crate::model::{Material, Mesh, Model, ModelData, ModelVertex, SimpleVertex, Vertex};
+use crate::scene::Window;
+use crate::texture::Texture;
+use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
-use crate::model::{ModelData, Model, Mesh, Material, ModelVertex, Vertex, SimpleVertex};
-use iced_wgpu::wgpu::{PipelineLayout, ShaderModule, RenderPass};
+use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
+use iced_winit::{futures, Color};
 use std::ops::Range;
+use std::time::Instant;
 
 pub trait Drawer {
     fn draw<'a>(&'a self, render_pass: &'a mut RenderPass<'a>);
 }
 
-pub trait Renderable {
-    fn get_drawers(&self, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> Vec<Box<dyn Drawer + '_>>;
-}
-
 pub struct ModelDrawer<'a> {
-    pub render_pipeline: &'a wgpu::RenderPipeline,
+    pub render_pipeline: wgpu::RenderPipeline,
     pub model_data: &'a Vec<ModelData>,
-    pub light_bind_group: &'a wgpu::BindGroup,
+    pub light_bind_group: wgpu::BindGroup,
+    pub texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub uniform_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl<'a> ModelDrawer<'a> {
@@ -34,8 +32,15 @@ impl<'a> ModelDrawer<'a> {
         light: &'b wgpu::BindGroup,
     ) {
         for mesh in &model.meshes {
-            let material = &model.materials[mesh.material];
-            self.draw_mesh_instanced(render_pass, mesh, material, instances.clone(), uniforms, light);
+            let material = &model.materials[mesh.material_id];
+            self.draw_mesh_instanced(
+                render_pass,
+                mesh,
+                material,
+                instances.clone(),
+                uniforms,
+                light,
+            );
         }
     }
 
@@ -89,33 +94,20 @@ impl Drawer for DebugDrawer {
     }
 }
 
-pub struct Rendering<D: Drawer> {
+pub struct Rendering {
     pub sc_desc: wgpu::SwapChainDescriptor,
     pub swap_chain: wgpu::SwapChain,
-
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
-
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub light_render_pipeline: wgpu::RenderPipeline,
-
     pub uniforms: Uniforms,
     pub uniform_buffer: wgpu::Buffer,
-
-    pub light_bind_group: wgpu::BindGroup,
-
-    // drawers: Vec<Box<dyn Drawer>>,
-    drawers: Vec<D>,
-
-    // todo move
     pub depth_texture: Texture,
     pub last_render_time: Instant,
-    pub texture_bind_group_layout: wgpu::BindGroupLayout,
-    pub uniform_bind_group_layout: wgpu::BindGroupLayout,
+    drawers: Vec<Box<dyn Drawer>>,
 }
 
-impl<D: Drawer> Rendering<D> {
-    pub fn new(instance: &wgpu::Instance, window: &Window) -> Rendering<D> {
+impl Rendering {
+    pub fn new(instance: &wgpu::Instance, window: &Window) -> Rendering {
         let (mut device, queue) = futures::executor::block_on(async {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
@@ -146,116 +138,7 @@ impl<D: Drawer> Rendering<D> {
             present_mode: wgpu::PresentMode::Fifo,
         };
         let swap_chain = device.create_swap_chain(&window.surface, &sc_desc);
-
         let depth_texture = Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
-
-        let uniform_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::UniformBuffer {
-                            dynamic: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStage::VERTEX,
-                        ty: wgpu::BindingType::StorageBuffer {
-                            dynamic: false,
-                            readonly: true,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-                label: Some("uniform_bind_group_layout"),
-            });
-
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::SampledTexture {
-                            multisampled: false,
-                            component_type: wgpu::TextureComponentType::Float,
-                            dimension: wgpu::TextureViewDimension::D2,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler { comparison: false },
-                        count: None,
-                    },
-                    // normal map
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::SampledTexture {
-                            multisampled: false,
-                            component_type: wgpu::TextureComponentType::Float,
-                            dimension: wgpu::TextureViewDimension::D2,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler { comparison: false },
-                        count: None,
-                    },
-                ],
-                label: Some("texture_bind_group_layout"),
-            });
-
-        let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
-        // We'll want to update our lights position, so we use COPY_DST
-        let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            contents: bytemuck::cast_slice(&[light]),
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-            label: Some("light buffer"),
-        });
-        let light_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::UniformBuffer {
-                        dynamic: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: None,
-            });
-        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &light_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(light_buffer.slice(..)),
-            }],
-            label: None,
-        });
-        let light_render_pipeline = {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("light pipeline"),
-                bind_group_layouts: &[&uniform_bind_group_layout, &light_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-            let vs_module =
-                device.create_shader_module(wgpu::include_spirv!("../shader/spv/light.vert.spv"));
-            let fs_module =
-                device.create_shader_module(wgpu::include_spirv!("../shader/spv/light.frag.spv"));
-            build_render_pipeline(&device, &layout, vs_module, fs_module)
-        };
-
         let mut uniforms = Uniforms::new();
         // todo will update it later using camera
         // uniforms.update_view_proj(&camera, &projection);
@@ -265,64 +148,31 @@ impl<D: Drawer> Rendering<D> {
             label: Some("uniform buffer"),
         });
 
-
-
         Rendering {
             swap_chain,
             sc_desc,
-            render_pipeline,
             queue,
             device,
             depth_texture,
             last_render_time: std::time::Instant::now(),
-            light_render_pipeline,
             uniforms,
             uniform_buffer,
-            light_bind_group,
             drawers: Vec::new(),
-            texture_bind_group_layout,
-            uniform_bind_group_layout,
         }
     }
 
-    fn build_model_drawer() -> ModelDrawer {
-
-        let render_pipeline = {
-            let render_pipeline_layout =
-                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    bind_group_layouts: &[
-                        &uniform_bind_group_layout,
-                        &texture_bind_group_layout,
-                        &light_bind_group_layout,
-                    ],
-                    label: Some("main"),
-                    push_constant_ranges: &[],
-                });
-            let vs_module = device.create_shader_module(wgpu::include_spirv!("../shader/spv/shader.vert.spv"));
-            let fs_module = device.create_shader_module(wgpu::include_spirv!("../shader/spv/shader.frag.spv"));
-            build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
-        };
-        ModelDrawer {
-            render_pipeline: &self.render_pipeline,
-            model_data: &self.scene.model_data,
-            light_bind_group: &self.light_bind_group,
-        }
-    }
-
-    pub fn render<R: Renderable>(&mut self, renderable: R) {
+    // todo render self of pass renderable and render it?
+    pub fn render(&mut self) {
         let frame = self
             .swap_chain
             .get_current_frame()
             .expect("Timeout getting texture")
             .output;
-
-        let mut encoder =
-            self
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
-
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                 attachment: &frame.view,
@@ -358,75 +208,8 @@ impl<D: Drawer> Rendering<D> {
         }
     }
 
-    // todo does D has Drawer bound?
-    pub fn add_drawer(&mut self, drawer: D) {
+    pub fn add_drawer(&mut self, drawer: Box<dyn Drawer>) {
         self.drawers.push(drawer);
-    }
-
-    fn get_drawers(&self) -> Vec<Box<dyn Drawer + '_>> {
-        let mut drawers: Vec<Box<dyn Drawer>> = Vec::new();
-        // todo bad idea to create bind group and pipeline every frame
-        let debug_uniform_bind_group_layout =
-            self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
-                    ty: wgpu::BindingType::UniformBuffer {
-                        dynamic: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("debug_uniform_bind_group_layout"),
-            });
-        let debug_uniform_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &debug_uniform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(self.uniform_buffer.slice(..)),
-            }],
-            label: Some("debug_uniform_bind_group"),
-        });
-        let debug_render_pipeline = {
-            let layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("debug pipeline"),
-                bind_group_layouts: &[&debug_uniform_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-            let vs_module =
-                self.device.create_shader_module(wgpu::include_spirv!("../shader/spv/debug.vert.spv"));
-            let fs_module =
-                self.device.create_shader_module(wgpu::include_spirv!("../shader/spv/debug.frag.spv"));
-            build_render_pipeline(&self.device, &layout, vs_module, fs_module)
-        };
-        let debug_buff = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&[
-                SimpleVertex {
-                    position: [-30.0, 23.0, 25.0],
-                },
-                SimpleVertex {
-                    position: [256.0, -918.0, 302.0],
-                },
-            ]),
-            usage: wgpu::BufferUsage::VERTEX,
-        });
-        const INDICES: &[u32] = &[0, 1];
-        let debug_index_buff = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Debug Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsage::INDEX,
-        });
-        drawers.push(Box::new(
-            DebugDrawer {
-                render_pipeline: debug_render_pipeline,
-                // todo why should I keep it in rendering if it's needed only in the debug drawer? check similar
-                vertex_buff: debug_buff,
-                index_buff:debug_index_buff,
-                uniform_bind_group: debug_uniform_bind_group,
-            }
-        ));
-        drawers
     }
 }
 
@@ -476,4 +259,200 @@ pub fn build_render_pipeline(
         sample_mask: !0,
         alpha_to_coverage_enabled: false,
     })
+}
+
+pub fn build_model_drawer<'a>(
+    device: &wgpu::Device,
+    model_data: &'a Vec<ModelData>,
+) -> ModelDrawer<'a> {
+    let uniform_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::StorageBuffer {
+                        dynamic: false,
+                        readonly: true,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("uniform_bind_group_layout"),
+        });
+    let texture_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::SampledTexture {
+                        multisampled: false,
+                        component_type: wgpu::TextureComponentType::Float,
+                        dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler { comparison: false },
+                    count: None,
+                },
+                // normal map
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::SampledTexture {
+                        multisampled: false,
+                        component_type: wgpu::TextureComponentType::Float,
+                        dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler { comparison: false },
+                    count: None,
+                },
+            ],
+            label: Some("texture_bind_group_layout"),
+        });
+    let light_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                ty: wgpu::BindingType::UniformBuffer {
+                    dynamic: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: None,
+        });
+    let render_pipeline = {
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                bind_group_layouts: &[
+                    &uniform_bind_group_layout,
+                    &texture_bind_group_layout,
+                    &light_bind_group_layout,
+                ],
+                label: Some("main"),
+                push_constant_ranges: &[],
+            });
+        let vs_module =
+            device.create_shader_module(wgpu::include_spirv!("../shader/spv/shader.vert.spv"));
+        let fs_module =
+            device.create_shader_module(wgpu::include_spirv!("../shader/spv/shader.frag.spv"));
+        build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
+    };
+    let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
+    // We'll want to update our lights position, so we use COPY_DST
+    let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        contents: bytemuck::cast_slice(&[light]),
+        usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        label: Some("light buffer"),
+    });
+    let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &light_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(light_buffer.slice(..)),
+        }],
+        label: None,
+    });
+    // // this pipeline just renders light model
+    // let light_render_pipeline = {
+    //     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    //         label: Some("light pipeline"),
+    //         bind_group_layouts: &[&uniform_bind_group_layout, &light_bind_group_layout],
+    //         push_constant_ranges: &[],
+    //     });
+    //     let vs_module =
+    //         device.create_shader_module(wgpu::include_spirv!("../shader/spv/light.vert.spv"));
+    //     let fs_module =
+    //         device.create_shader_module(wgpu::include_spirv!("../shader/spv/light.frag.spv"));
+    //     build_render_pipeline(&device, &layout, vs_module, fs_module)
+    // };
+    ModelDrawer {
+        render_pipeline,
+        model_data,
+        light_bind_group,
+        texture_bind_group_layout,
+        uniform_bind_group_layout,
+    }
+}
+
+pub fn build_debug_drawer(device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> DebugDrawer {
+    let debug_uniform_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStage::VERTEX,
+                ty: wgpu::BindingType::UniformBuffer {
+                    dynamic: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("debug_uniform_bind_group_layout"),
+        });
+    let debug_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &debug_uniform_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
+        }],
+        label: Some("debug_uniform_bind_group"),
+    });
+    let debug_render_pipeline = {
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("debug pipeline"),
+            bind_group_layouts: &[&debug_uniform_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let vs_module =
+            device.create_shader_module(wgpu::include_spirv!("../shader/spv/debug.vert.spv"));
+        let fs_module =
+            device.create_shader_module(wgpu::include_spirv!("../shader/spv/debug.frag.spv"));
+        build_render_pipeline(device, &layout, vs_module, fs_module)
+    };
+    let debug_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: bytemuck::cast_slice(&[
+            SimpleVertex {
+                position: [-30.0, 23.0, 25.0],
+            },
+            SimpleVertex {
+                position: [256.0, -918.0, 302.0],
+            },
+        ]),
+        usage: wgpu::BufferUsage::VERTEX,
+    });
+    const INDICES: &[u32] = &[0, 1];
+    let debug_index_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Debug Index Buffer"),
+        contents: bytemuck::cast_slice(INDICES),
+        usage: wgpu::BufferUsage::INDEX,
+    });
+    // todo one structure with optional fields?
+    DebugDrawer {
+        render_pipeline: debug_render_pipeline,
+        vertex_buff: debug_buff,
+        index_buff: debug_index_buff,
+        uniform_bind_group: debug_uniform_bind_group,
+    }
 }
