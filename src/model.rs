@@ -35,8 +35,8 @@ impl Vertex for SimpleVertex {
 // pub struct ModelData {
 //     pub model: Model,
 //     pub instances: Vec<Instance>,
-// pub instance_buffer: wgpu::Buffer,
-// pub uniform_bind_group: BindGroup,
+//     pub instance_buffer: wgpu::Buffer,
+//     pub uniform_bind_group: BindGroup,
 // }
 
 pub struct ModelData {
@@ -270,7 +270,7 @@ impl Model {
             meshes.push(Mesh {
                 name: m.name,
                 vertices,
-                indexes: m.mesh.indices,
+                indices: m.mesh.indices,
                 material_id: m.mesh.material_id.unwrap_or(0),
             });
         }
@@ -358,7 +358,7 @@ impl Material {
 pub struct Mesh {
     pub name: String,
     pub vertices: Vec<ModelVertex>,
-    pub indexes: Vec<u32>,
+    pub indices: Vec<u32>,
     pub material_id: usize,
 }
 

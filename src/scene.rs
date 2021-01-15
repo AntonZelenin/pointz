@@ -264,6 +264,7 @@ impl App {
             for instance in &mut model_data.instances {
                 instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
             }
+            // todo move to rendering
             let instance_data = model_data
                 .instances
                 .iter()
