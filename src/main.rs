@@ -30,7 +30,9 @@ pub fn main() {
     let window = Window::new(&instance, &event_loop);
     let scene = Scene::new();
     let mut rendering = Rendering::new(&instance, &window);
-    rendering.add_drawer(Box::new(render::build_model_drawer(&rendering.device, &scene.model_data)));
+    let mut model_drawer= drawer::model::ModelDrawer::build_model_drawer(&rendering.device, &rendering.uniform_buffer);
+    model_drawer.add_models(&scene.model_data);
+    rendering.add_drawer(Box::new(model_drawer));
     rendering.add_drawer(Box::new(render::build_debug_drawer(&rendering.device, &rendering.uniform_buffer)));
     let gui = GUI::new(&mut rendering.device, &window.viewport);
     let camera_state = CameraState::new(rendering.sc_desc.width, rendering.sc_desc.height);

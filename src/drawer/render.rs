@@ -8,7 +8,7 @@ use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
 use iced_winit::{futures, Color};
 use std::time::Instant;
-use crate::drawer;
+use crate::{drawer, texture};
 
 pub trait Drawer {
     fn draw<'a>(&'a self, render_pass: &'a mut RenderPass<'a>);
@@ -38,7 +38,7 @@ pub struct Rendering {
     pub device: wgpu::Device,
     pub uniforms: Uniforms,
     pub uniform_buffer: wgpu::Buffer,
-    pub depth_texture: Texture,
+    // pub depth_texture: Texture,
     pub last_render_time: Instant,
     drawers: Vec<Box<dyn Drawer>>,
 }
@@ -90,7 +90,7 @@ impl Rendering {
             sc_desc,
             queue,
             device,
-            depth_texture,
+            // depth_texture,
             last_render_time: std::time::Instant::now(),
             uniforms,
             uniform_buffer,
@@ -127,20 +127,21 @@ impl Rendering {
                     store: true,
                 },
             }],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                attachment: &self.depth_texture.view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: true,
-                }),
-                stencil_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(0),
-                    store: true,
-                }),
-            }),
+            // depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+            //     attachment: &self.depth_texture.view,
+            //     depth_ops: Some(wgpu::Operations {
+            //         load: wgpu::LoadOp::Clear(1.0),
+            //         store: true,
+            //     }),
+            //     stencil_ops: Some(wgpu::Operations {
+            //         load: wgpu::LoadOp::Clear(0),
+            //         store: true,
+            //     }),
+            // }),
+            depth_stencil_attachment: None,
         });
 
-        for drawer in self.drawers {
+        for drawer in self.drawers.iter() {
             drawer.draw(&mut render_pass);
         }
     }
@@ -183,8 +184,7 @@ pub fn build_render_pipeline(
             write_mask: wgpu::ColorWrite::ALL,
         }],
         depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
-            // todo keep this const in a texture as it used to be?
-            format: drawer::model::DEPTH_FORMAT,
+            format: texture::DEPTH_FORMAT,
             depth_write_enabled: true,
             depth_compare: wgpu::CompareFunction::Less,
             stencil: wgpu::StencilStateDescriptor::default(),

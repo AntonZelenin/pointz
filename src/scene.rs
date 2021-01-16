@@ -9,7 +9,6 @@ use crate::widgets::fps;
 use cgmath::prelude::*;
 use cgmath::{Deg, Point3, Quaternion, Rad, Vector2, Vector3, Vector4};
 use iced_wgpu::wgpu;
-use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::{Backend, Renderer, Settings, Viewport};
 use iced_winit::winit::event_loop::EventLoop;
 use iced_winit::winit::window;
@@ -235,11 +234,11 @@ impl App {
         // todo event
         self.rendering.sc_desc.width = new_size.width;
         self.rendering.sc_desc.height = new_size.height;
-        self.rendering.depth_texture = Texture::create_depth_texture(
-            &self.rendering.device,
-            &self.rendering.sc_desc,
-            "depth_texture",
-        );
+        // self.rendering.depth_texture = Texture::create_depth_texture(
+        //     &self.rendering.device,
+        //     &self.rendering.sc_desc,
+        //     "depth_texture",
+        // );
         self.rendering.swap_chain = self
             .rendering
             .device
@@ -270,11 +269,12 @@ impl App {
                 .iter()
                 .map(Instance::to_raw)
                 .collect::<Vec<_>>();
-            self.rendering.queue.write_buffer(
-                &model_data.instance_buffer,
-                0,
-                bytemuck::cast_slice(&instance_data),
-            );
+            // todo update in the ModelDrawer
+            // self.rendering.queue.write_buffer(
+            //     &model_data.instance_buffer,
+            //     0,
+            //     bytemuck::cast_slice(&instance_data),
+            // );
         }
 
         self.gui.fps_meter.push(dt);
@@ -310,14 +310,16 @@ impl App {
                 ray_world.z * self.camera_state.projection.zfar,
             ],
         };
-        self.rendering.debug_buff =
-            self.rendering
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Vertex Buffer"),
-                    contents: bytemuck::cast_slice(&[vec_start, vec_end]),
-                    usage: wgpu::BufferUsage::VERTEX,
-                });
+        // todo what is this?
+        // self.rendering.debug_buff =
+        //     self.rendering
+        //         .device
+        //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //             label: Some("Vertex Buffer"),
+        //             contents: bytemuck::cast_slice(&[vec_start, vec_end]),
+        //             usage: wgpu::BufferUsage::VERTEX,
+        //         });
+
         // self.program_state.queue_message(Message::DebugInfo(
         //     format!(
         //         "x {}, y {}, z {}\n",
