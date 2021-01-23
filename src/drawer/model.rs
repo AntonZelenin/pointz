@@ -5,30 +5,53 @@ use std::ops::Range;
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::RenderPass;
 use iced_wgpu::wgpu::util::DeviceExt;
-use std::collections::HashMap;
-use crate::model::ID;
+use crate::drawer::render::{ObjectHandle, ResourceRegistry, MeshHandle, MaterialHandle};
+use crate::texture::TextureType;
 
-pub struct ModelDrawer<'a> {
-    device: &'a wgpu::Device,
+struct InternalMesh {
+    handle: MeshHandle,
+    count: usize,
+    material_handle: MaterialHandle,
+}
+
+struct InternalObject {
+    handle: ObjectHandle,
+    num_instances: usize,
+    internal_meshes: Vec<InternalMesh>,
+}
+
+pub struct IndexDriver {
+    current_index: usize,
+}
+
+impl IndexDriver {
+    pub fn new() -> IndexDriver {
+        IndexDriver {
+            current_index: 0,
+        }
+    }
+
+    pub fn next_id(&mut self) -> usize {
+        self.current_index += 1;
+        self.current_index
+    }
+}
+
+pub struct ModelDrawer {
+    index_driver: IndexDriver,
     pub render_pipeline: wgpu::RenderPipeline,
     pub light_bind_group: wgpu::BindGroup,
-    model_data: HashMap<String, &'a model::ModelData>,
-    bing_groups: HashMap<String, wgpu::BindGroup>,
-    vertex_buffers: HashMap<String, wgpu::Buffer>,
-    index_buffers: HashMap<String, wgpu::Buffer>,
+    objects: Vec<InternalObject>,
+    material_bind_group_registry: ResourceRegistry<wgpu::BindGroup>,
+    uniform_bind_group_registry: ResourceRegistry<wgpu::BindGroup>,
+    vertex_buffer_registry: ResourceRegistry<wgpu::Buffer>,
+    index_buffer_registry: ResourceRegistry<wgpu::Buffer>,
     uniform_bind_group_layout: wgpu::BindGroupLayout,
-    uniform_buffer: &'a wgpu::Buffer,
-    texture_drawer: TextureDrawer,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
 }
 
-pub struct TextureDrawer {
-    bind_group_layout: wgpu::BindGroupLayout,
-    views: HashMap<String, wgpu::TextureView>,
-    samplers: HashMap<String, wgpu::Sampler>,
-}
-
-impl<'a> ModelDrawer<'a> {
-    pub fn build_model_drawer(device: &'a wgpu::Device, uniform_buffer: &'a wgpu::Buffer) -> ModelDrawer<'a> {
+impl ModelDrawer {
+    pub fn build_model_drawer(device: &wgpu::Device) -> ModelDrawer {
         let uniform_bind_group_layout = <ModelDrawer>::create_uniform_bind_group_layout(device);
         let texture_bind_group_layout = <ModelDrawer>::create_texture_bind_group_layout(device);
         let light_bind_group_layout = <ModelDrawer>::create_light_bind_group_layout(device);
@@ -78,139 +101,107 @@ impl<'a> ModelDrawer<'a> {
         //         device.create_shader_module(wgpu::include_spirv!("../shader/spv/light.frag.spv"));
         //     build_render_pipeline(&device, &layout, vs_module, fs_module)
         // };
-        let texture_drawer = TextureDrawer {
-            bind_group_layout: texture_bind_group_layout,
-            views: HashMap::new(),
-            samplers: HashMap::new(),
-        };
         ModelDrawer {
-            device,
+            index_driver: IndexDriver::new(),
             render_pipeline,
             light_bind_group,
-            model_data: HashMap::new(),
-            bing_groups: HashMap::new(),
-            vertex_buffers: HashMap::new(),
-            index_buffers: HashMap::new(),
+            objects: vec![],
+            material_bind_group_registry: ResourceRegistry::new(),
+            uniform_bind_group_registry: ResourceRegistry::new(),
+            vertex_buffer_registry: ResourceRegistry::new(),
+            index_buffer_registry: ResourceRegistry::new(),
             uniform_bind_group_layout,
-            uniform_buffer,
-            texture_drawer,
+            texture_bind_group_layout,
         }
     }
 
-    pub fn add_models(&mut self, models_data: &'a Vec<model::ModelData>) {
-        for model_data in models_data.iter() {
-            let model = &model_data.model;
-            self.model_data.insert(
-                model.get_id().to_string(),
-                model_data
-            );
-            self.bing_groups.insert(
-                model.get_id().to_string(),
-                self.create_model_uniform_bind_group(model_data)
-            );
-            for mesh in model.meshes.iter() {
-                self.index_buffers.insert(
-                    mesh.get_id().to_string(),
-                    self.create_mesh_index_buffer(&mesh)
-                );
-                self.vertex_buffers.insert(
-                    mesh.get_id().to_string(),
-                    self.create_mesh_vertex_buffer(mesh)
-                );
-            }
-            for material in model.materials.iter() {
-                self.bing_groups.insert(
-                    material.get_id().to_string(),
-                    self.create_material_bind_group(material)
-                );
-            }
+    pub fn add_model(
+        &mut self,
+        model: model::Model,
+        instances: Vec<instance::Instance>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        uniform_buffer: &wgpu::Buffer
+    ) -> ObjectHandle {
+        let object_handle = ObjectHandle(self.index_driver.next_id());
+        let mut internal_meshes: Vec<InternalMesh> = vec![];
+        for (id, material) in model.materials.iter().enumerate() {
+            let material_bind_group = self.create_material_bind_group(material, device, queue);
+            self.material_bind_group_registry.insert(id, material_bind_group);
         }
+        for mesh in model.meshes.iter() {
+            let mesh_handle = MeshHandle(self.index_driver.next_id());
+            self.index_buffer_registry.insert(mesh_handle.0, self.create_mesh_index_buffer(&mesh, device));
+            self.vertex_buffer_registry.insert(mesh_handle.0, self.create_mesh_vertex_buffer(mesh, device));
+            let material_handle = MaterialHandle(mesh.material_id);
+            internal_meshes.push(InternalMesh {
+                count: mesh.indices.len(),
+                handle: mesh_handle,
+                material_handle
+            });
+        }
+        // for material in model.materials.iter() {
+        //     let material_handle = MaterialHandle(self.index_driver.next_id());
+        //     self.material_bind_group_registry.insert(material_handle.0, self.create_material_bind_group(material, device));
+        // };
+        let num_instances = instances.len();
+        self.uniform_bind_group_registry.insert(object_handle.0, self.create_model_uniform_bind_group(instances, device, uniform_buffer));
+        self.objects.push(InternalObject {
+            handle: object_handle.clone(),
+            num_instances,
+            internal_meshes,
+        });
+        object_handle
     }
 
-    fn create_mesh_index_buffer(&self, mesh: &model::Mesh) -> wgpu::Buffer {
-        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    fn create_mesh_index_buffer(&self, mesh: &model::Mesh, device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&mesh.indices),
             usage: wgpu::BufferUsage::INDEX,
             label: Some("index buffer"),
         })
     }
 
-    fn create_mesh_vertex_buffer(&self, mesh: &model::Mesh) -> wgpu::Buffer {
-        self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    fn create_mesh_vertex_buffer(&self, mesh: &model::Mesh, device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&mesh.vertices),
             usage: wgpu::BufferUsage::VERTEX,
             label: Some("vertex buffer"),
         })
     }
 
-    fn create_material_bind_group(&mut self, material: &model::Material) -> wgpu::BindGroup {
-        let layout = &self.texture_drawer.bind_group_layout;
-        self.texture_drawer.views.insert(
-            material.diffuse_texture.get_id().to_string(),
-            self.create_view(&material.diffuse_texture)
-        );
-        self.texture_drawer.views.insert(
-            material.normal_texture.get_id().to_string(),
-            self.create_view(&material.normal_texture)
-        );
-        self.texture_drawer.samplers.insert(
-            material.diffuse_texture.get_id().to_string(),
-            self.create_sampler(&material.diffuse_texture)
-        );
-        self.texture_drawer.samplers.insert(
-            material.normal_texture.get_id().to_string(),
-            self.create_sampler(&material.normal_texture)
-        );
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+    fn create_material_bind_group(&mut self, material: &model::Material, device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::BindGroup {
+        let layout = &self.texture_bind_group_layout;
+        let diffuse_view = create_view(&material.diffuse_texture, device, queue);
+        let normal_view = create_view(&material.normal_texture, device, queue);
+        let diffuse_sampler = self.create_sampler(device);
+        let normal_sampler = self.create_sampler(device);
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        self.texture_drawer.views.get(material.diffuse_texture.get_id()).unwrap()
-                    ),
+                    resource: wgpu::BindingResource::TextureView(&diffuse_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(self.texture_drawer.samplers.get(material.diffuse_texture.get_id()).unwrap()),
+                    resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(self.texture_drawer.views.get(material.normal_texture.get_id()).unwrap()),
+                    resource: wgpu::BindingResource::TextureView(&normal_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(self.texture_drawer.samplers.get(material.normal_texture.get_id()).unwrap()),
+                    resource: wgpu::BindingResource::Sampler(&normal_sampler),
                 },
             ],
             label: Some(&material.name),
         })
     }
 
-    fn create_view(&self, texture: &texture::Texture) -> wgpu::TextureView {
-        let wgpu_texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(&texture.label),
-            size: wgpu::Extent3d {
-                width: texture.dimensions.0,
-                height: texture.dimensions.1,
-                depth: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: if texture.is_normal_map {
-                wgpu::TextureFormat::Rgba8Unorm
-            } else {
-                wgpu::TextureFormat::Rgba8UnormSrgb
-            },
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
-        });
-        wgpu_texture.create_view(&wgpu::TextureViewDescriptor::default())
-    }
-
-    fn create_sampler(&self, texture: &texture::Texture) -> wgpu::Sampler {
-        // todo use one for all?
-        self.device.create_sampler(&wgpu::SamplerDescriptor {
+    fn create_sampler(&self, device: &wgpu::Device) -> wgpu::Sampler {
+        device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -221,25 +212,24 @@ impl<'a> ModelDrawer<'a> {
         })
     }
 
-    pub fn remove_models(&mut self, model_data: &model::ModelData) {
-        let model_id = model_data.model.get_id().to_string();
-        self.model_data.remove(&model_id);
-        self.bing_groups.remove(&model_id);
-    }
+    // pub fn remove_model_instance(&mut self, model_batch: &model::ModelBatch) {
+    //     let model_id = model_batch.model.get_id().to_string();
+    //     self.bind_group_registry.remove(&model_id);
+    // }
 
-    fn create_model_uniform_bind_group(&self, model_data: &'a model::ModelData) -> wgpu::BindGroup {
-        let instance_data = model_data.instances.iter().map(instance::Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    fn create_model_uniform_bind_group(&self, instances: Vec<instance::Instance>, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> wgpu::BindGroup {
+        let instance_data = instances.iter().map(instance::Instance::to_raw).collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&instance_data),
             usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
             label: Some("instance buffer"),
         });
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.uniform_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer(self.uniform_buffer.slice(..)),
+                    resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -333,60 +323,133 @@ impl<'a> ModelDrawer<'a> {
         })
     }
 
-    fn draw_model_instanced<'b>(
-        &'b self,
-        render_pass: &'b mut RenderPass<'b>,
-        model: &'b model::Model,
-        instances: Range<u32>,
-        uniforms: &'b wgpu::BindGroup,
-        light: &'b wgpu::BindGroup,
+    fn draw_model_instanced<'a: 'b, 'b>(
+        &'a self,
+        render_pass: &'b mut RenderPass<'a>,
+        object: &InternalObject,
+        instances: &Range<u32>,
     ) {
-        // todo queue.write_texture ???
-        for mesh in &model.meshes {
-            let material = &model.materials[mesh.material_id];
+        for internal_mesh in object.internal_meshes.iter() {
             self.draw_mesh_instanced(
                 render_pass,
-                mesh,
-                material,
+                internal_mesh,
+                self.uniform_bind_group_registry.get(object.handle.0),
                 instances.clone(),
-                uniforms,
-                light,
             );
         }
     }
 
-    fn draw_mesh_instanced<'b>(
-        &'b self,
-        render_pass: &'b mut RenderPass<'b>,
-        mesh: &'b model::Mesh,
-        material: &'b model::Material,
+    fn draw_mesh_instanced<'a: 'b, 'b>(
+        &'a self,
+        render_pass: &'b mut RenderPass<'a>,
+        mesh: &InternalMesh,
+        uniform_bind_group: &'a wgpu::BindGroup,
         instances: Range<u32>,
-        uniform_bind_group: &'b wgpu::BindGroup,
-        light: &'b wgpu::BindGroup,
     ) {
-        let vertex_buffer = self.vertex_buffers.get(mesh.get_id()).unwrap();
-        let index_buffer = self.index_buffers.get(mesh.get_id()).unwrap();
-        let bind_group = self.bing_groups.get(material.get_id()).unwrap();
+        let vertex_buffer = self.vertex_buffer_registry.get(mesh.handle.0);
+        let index_buffer = self.index_buffer_registry.get(mesh.handle.0);
+        let material_bind_group = self.material_bind_group_registry.get(mesh.material_handle.0);
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         render_pass.set_index_buffer(index_buffer.slice(..));
-        render_pass.set_bind_group(0, &uniform_bind_group, &[]);
-        render_pass.set_bind_group(1, bind_group, &[]);
-        render_pass.set_bind_group(2, &light, &[]);
-        render_pass.draw_indexed(0..mesh.indices.len() as u32, 0, instances);
+        render_pass.set_bind_group(0, uniform_bind_group, &[]);
+        render_pass.set_bind_group(1, material_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.light_bind_group, &[]);
+        render_pass.draw_indexed(0..mesh.count as u32, 0, instances);
     }
 }
 
-impl render::Drawer for ModelDrawer<'_> {
-    fn draw<'b>(&'b self, render_pass: &'b mut RenderPass<'b>) {
+impl render::Drawer for ModelDrawer {
+    fn draw<'a: 'b, 'b>(
+        &'a self,
+        render_pass: &'b mut RenderPass<'a>
+    ) {
         render_pass.set_pipeline(&self.render_pipeline);
-        for (_, model_data) in self.model_data.iter() {
+        for object in self.objects.iter() {
             self.draw_model_instanced(
                 render_pass,
-                &model_data.model,
-                0..model_data.instances.len() as u32,
-                self.bing_groups.get(model_data.model.get_id()).unwrap(),
-                &self.light_bind_group,
+                &object,
+                &(0..object.num_instances as u32),
             );
         }
     }
+}
+
+pub fn create_view(texture: &texture::Texture, device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::TextureView {
+    let wgpu_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(&texture.label),
+        size: wgpu::Extent3d {
+            width: texture.dimensions.0,
+            height: texture.dimensions.1,
+            depth: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: match texture.type_ {
+            TextureType::Normal => wgpu::TextureFormat::Rgba8Unorm,
+            TextureType::Diffuse => wgpu::TextureFormat::Rgba8UnormSrgb,
+            TextureType::Depth => texture::DEPTH_FORMAT,
+        },
+        usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+    });
+    if let Some(rgba_image) = texture.rgba_image.as_ref() {
+        queue.write_texture(
+            wgpu::TextureCopyView {
+                texture: &wgpu_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            rgba_image,
+            wgpu::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: 4 * texture.dimensions.0,
+                rows_per_image: texture.dimensions.1,
+            },
+            wgpu::Extent3d {
+                width: texture.dimensions.0,
+                height: texture.dimensions.1,
+                depth: 1,
+            },
+        );
+    }
+    wgpu_texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+pub fn create_depth_view(texture: &texture::Texture, device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::TextureView {
+    let wgpu_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(&texture.label),
+        size: wgpu::Extent3d {
+            width: texture.dimensions.0,
+            height: texture.dimensions.1,
+            depth: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: texture::DEPTH_FORMAT,
+        usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT
+            | wgpu::TextureUsage::SAMPLED
+            | wgpu::TextureUsage::COPY_SRC,
+    });
+    if let Some(rgba_image) = texture.rgba_image.as_ref() {
+        queue.write_texture(
+            wgpu::TextureCopyView {
+                texture: &wgpu_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            rgba_image,
+            wgpu::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: 4 * texture.dimensions.0,
+                rows_per_image: texture.dimensions.1,
+            },
+            wgpu::Extent3d {
+                width: texture.dimensions.0,
+                height: texture.dimensions.1,
+                depth: 1,
+            },
+        );
+    }
+    wgpu_texture.create_view(&wgpu::TextureViewDescriptor::default())
 }

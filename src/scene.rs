@@ -1,20 +1,19 @@
 use crate::camera::{Camera, CameraController, CursorWatcher, Projection};
-use crate::controls;
-use crate::drawer::render::Rendering;
+use crate::drawer::render::{RenderingState, ObjectHandle};
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
-use crate::model;
-use crate::model::{Model, ModelData, SimpleVertex};
-use crate::texture::Texture;
+use crate::{controls, event, model};
+use crate::model::{Model, ModelBatch};
 use crate::widgets::fps;
 use cgmath::prelude::*;
-use cgmath::{Deg, Point3, Quaternion, Rad, Vector2, Vector3, Vector4};
+use cgmath::{Deg, Point3, Quaternion, Vector3};
 use iced_wgpu::wgpu;
-use iced_wgpu::{Backend, Renderer, Settings, Viewport};
+use iced_wgpu::{Backend, Renderer, Settings};
 use iced_winit::winit::event_loop::EventLoop;
-use iced_winit::winit::window;
 use iced_winit::{conversion, program, winit, Debug, Size};
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
+use iced_winit::winit::window::{WindowBuilder, Window};
+use crate::texture::Texture;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
@@ -28,13 +27,13 @@ pub struct GUI {
 }
 
 impl GUI {
-    pub fn new(device: &mut wgpu::Device, viewport: &Viewport) -> GUI {
+    pub fn new(device: &wgpu::Device, scale_factor: f64, size: PhysicalSize<u32>) -> GUI {
         let mut renderer = iced_wgpu::Renderer::new(Backend::new(device, Settings::default()));
         let mut debug = Debug::new();
         let program_state = program::State::new(
             controls::GUI::new(),
-            viewport.logical_size(),
-            conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), viewport.scale_factor()),
+            Size::new(size.width as f32, size.height as f32),
+            conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), scale_factor),
             &mut renderer,
             &mut debug,
         );
@@ -69,36 +68,6 @@ impl CameraState {
             cursor_watcher: CursorWatcher::new(),
         }
     }
-}
-
-pub struct Window {
-    pub viewport: Viewport,
-    pub surface: wgpu::Surface,
-    pub window: winit::window::Window,
-    pub resized: bool,
-}
-
-impl Window {
-    pub fn new(instance: &wgpu::Instance, event_loop: &EventLoop<()>) -> Window {
-        let window = window::Window::new(&event_loop).unwrap();
-        let viewport = Viewport::with_physical_size(
-            Size::new(window.inner_size().width, window.inner_size().height),
-            window.scale_factor(),
-        );
-        let surface = unsafe { instance.create_surface(&window) };
-
-        let window = Window {
-            viewport,
-            surface,
-            window,
-            resized: false,
-        };
-        window
-    }
-}
-
-pub struct Scene {
-    pub model_data: Vec<ModelData>,
 }
 
 // impl Scene {
@@ -174,15 +143,49 @@ pub struct Scene {
 //     }
 // }
 
-impl Scene {
-    pub fn new() -> Scene {
+pub struct App {
+    pub window: Window,
+    pub rendering: RenderingState,
+    pub gui: GUI,
+    pub camera_state: CameraState,
+    objects: Vec<ObjectHandle>,
+}
+
+impl App {
+    pub fn run() {
+        let event_loop = EventLoop::new();
+        let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+        let window = {
+            let mut builder = WindowBuilder::new();
+            builder = builder.with_title("scene-viewer");
+            builder.build(&event_loop).expect("Could not build window")
+        };
+        let surface = unsafe { instance.create_surface(&window) };
+        let rendering = RenderingState::new(&instance, surface, window.inner_size());
+        let gui = GUI::new(&rendering.device, window.scale_factor(), window.inner_size());
+        let camera_state = CameraState::new(rendering.sc_desc.width, rendering.sc_desc.height);
+        let mut app = App {
+            window,
+            rendering,
+            gui,
+            camera_state,
+            objects: Vec::new(),
+        };
+        app.objects = app.add_models();
+
+        event_loop.run(move |event, _, control_flow| {
+            event::processor::process_events(&mut app, &event, control_flow)
+        })
+    }
+
+    fn add_models(&mut self) -> Vec<ObjectHandle>{
         let mut obj_models: Vec<Model> = Vec::new();
         for model_path in MODELS.iter() {
             obj_models.push(
                 model::Model::load(model_path).unwrap(),
             );
         }
-        let mut models: Vec<ModelData> = Vec::new();
+        let mut model_batches: Vec<ModelBatch> = Vec::new();
         let mut i: i32 = -1;
         for obj_model in obj_models {
             i += 1;
@@ -209,24 +212,18 @@ impl Scene {
                 })
                 .collect::<Vec<_>>();
 
-            models.push(ModelData {
+            model_batches.push(ModelBatch {
                 model: obj_model,
                 instances,
             });
         }
-        Scene { model_data: models }
+        let mut object_handles: Vec<ObjectHandle> = vec![];
+        for model_batch in model_batches {
+            object_handles.push(self.rendering.add_model(model_batch.model, model_batch.instances));
+        }
+        object_handles
     }
-}
 
-pub struct App {
-    pub window: Window,
-    pub rendering: Rendering,
-    pub gui: GUI,
-    pub camera_state: CameraState,
-    pub scene: Scene,
-}
-
-impl App {
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         self.camera_state
             .projection
@@ -234,15 +231,14 @@ impl App {
         // todo event
         self.rendering.sc_desc.width = new_size.width;
         self.rendering.sc_desc.height = new_size.height;
-        // self.rendering.depth_texture = Texture::create_depth_texture(
-        //     &self.rendering.device,
-        //     &self.rendering.sc_desc,
-        //     "depth_texture",
-        // );
+        self.rendering.depth_texture = Texture::create_depth_texture(
+            &self.rendering.sc_desc,
+            "depth_texture",
+        );
         self.rendering.swap_chain = self
             .rendering
             .device
-            .create_swap_chain(&self.window.surface, &self.rendering.sc_desc);
+            .create_swap_chain(&self.rendering.surface, &self.rendering.sc_desc);
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {
@@ -259,23 +255,23 @@ impl App {
             bytemuck::cast_slice(&[self.rendering.uniforms]),
         );
 
-        for model_data in &mut self.scene.model_data {
-            for instance in &mut model_data.instances {
-                instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
-            }
-            // todo move to rendering
-            let instance_data = model_data
-                .instances
-                .iter()
-                .map(Instance::to_raw)
-                .collect::<Vec<_>>();
+        // for model_batch in &mut self.scene.model_batches {
+        //     for instance in &mut model_batch.instances {
+        //         instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
+        //     }
+        //     todo move to rendering
+            // let instance_data = model_batch
+            //     .instances
+            //     .iter()
+            //     .map(Instance::to_raw)
+            //     .collect::<Vec<_>>();
             // todo update in the ModelDrawer
             // self.rendering.queue.write_buffer(
             //     &model_data.instance_buffer,
             //     0,
             //     bytemuck::cast_slice(&instance_data),
             // );
-        }
+        // }
 
         self.gui.fps_meter.push(dt);
         self.gui
@@ -286,31 +282,30 @@ impl App {
     }
 
     pub fn process_left_click(&mut self) {
-        let click_coords = self.get_normalized_opengl_coords();
-        let clip_coords = Vector4::new(click_coords.x, click_coords.y, -1.0, 1.0);
-        // y is deviated by 2 for some reason
-        let click_world_coords =
-            self.camera_state.camera.calc_matrix().invert().unwrap() * clip_coords;
-        let mut eye_coords =
-            self.camera_state.projection.calc_matrix().invert().unwrap() * clip_coords;
-        eye_coords = Vector4::new(eye_coords.x, eye_coords.y, -1.0, 0.0);
-        let ray_world =
-            (self.camera_state.camera.calc_matrix().invert().unwrap() * eye_coords).normalize();
-        let vec_start = SimpleVertex {
-            position: [
-                click_world_coords.x,
-                click_world_coords.y,
-                click_world_coords.z,
-            ],
-        };
-        let vec_end = SimpleVertex {
-            position: [
-                ray_world.x * self.camera_state.projection.zfar,
-                ray_world.y * self.camera_state.projection.zfar,
-                ray_world.z * self.camera_state.projection.zfar,
-            ],
-        };
-        // todo what is this?
+        // let click_coords = self.get_normalized_opengl_coords();
+        // let clip_coords = Vector4::new(click_coords.x, click_coords.y, -1.0, 1.0);
+        // // y is deviated by 2 for some reason
+        // let click_world_coords =
+        //     self.camera_state.camera.calc_matrix().invert().unwrap() * clip_coords;
+        // let mut eye_coords =
+        //     self.camera_state.projection.calc_matrix().invert().unwrap() * clip_coords;
+        // eye_coords = Vector4::new(eye_coords.x, eye_coords.y, -1.0, 0.0);
+        // let ray_world =
+        //     (self.camera_state.camera.calc_matrix().invert().unwrap() * eye_coords).normalize();
+        // let vec_start = SimpleVertex {
+        //     position: [
+        //         click_world_coords.x,
+        //         click_world_coords.y,
+        //         click_world_coords.z,
+        //     ],
+        // };
+        // let vec_end = SimpleVertex {
+        //     position: [
+        //         ray_world.x * self.camera_state.projection.zfar,
+        //         ray_world.y * self.camera_state.projection.zfar,
+        //         ray_world.z * self.camera_state.projection.zfar,
+        //     ],
+        // };
         // self.rendering.debug_buff =
         //     self.rendering
         //         .device
@@ -331,13 +326,13 @@ impl App {
         // ));
     }
 
-    fn get_normalized_opengl_coords(&self) -> Vector2<f32> {
-        // convert mouse position to opengl coords
-        Vector2::new(
-            (2.0 * self.gui.cursor_position.x as f32) / self.rendering.sc_desc.width as f32 - 1.0,
-            -(2.0 * self.gui.cursor_position.y as f32) / self.rendering.sc_desc.height as f32 - 1.0,
-        )
-    }
+    // fn get_normalized_opengl_coords(&self) -> Vector2<f32> {
+    //     // convert mouse position to opengl coords
+    //     Vector2::new(
+    //         (2.0 * self.gui.cursor_position.x as f32) / self.rendering.sc_desc.width as f32 - 1.0,
+    //         -(2.0 * self.gui.cursor_position.y as f32) / self.rendering.sc_desc.height as f32 - 1.0,
+    //     )
+    // }
 
     pub fn render(&mut self) {
         self.rendering.render();

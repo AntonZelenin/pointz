@@ -3,17 +3,9 @@ use crate::texture;
 use anyhow::*;
 use iced_wgpu::wgpu;
 use std::path::Path;
-use uuid::Uuid;
 
 pub trait Vertex {
     fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a>;
-}
-
-pub trait ID {
-    fn get_id(&self) -> &str;
-    fn generate_id() -> String {
-        Uuid::new_v4().to_string()
-    }
 }
 
 #[repr(C)]
@@ -39,21 +31,14 @@ impl Vertex for SimpleVertex {
     }
 }
 
-pub struct ModelData {
+pub struct ModelBatch {
     pub model: Model,
     pub instances: Vec<Instance>,
 }
 
 pub struct Model {
-    id: String,
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
-}
-
-impl ID for Model {
-    fn get_id(&self) -> &str {
-        &self.id
-    }
 }
 
 impl Model {
@@ -151,7 +136,6 @@ impl Model {
             }
             
             meshes.push(Mesh {
-                id: Mesh::generate_id(),
                 name: m.name,
                 vertices,
                 indices: m.mesh.indices,
@@ -160,7 +144,6 @@ impl Model {
         }
 
         Ok(Model {
-            id: Model::generate_id(),
             meshes,
             materials
         })
@@ -168,16 +151,9 @@ impl Model {
 }
 
 pub struct Material {
-    id: String,
     pub name: String,
     pub diffuse_texture: texture::Texture,
     pub normal_texture: texture::Texture,
-}
-
-impl ID for Material {
-    fn get_id(&self) -> &str {
-        &self.id
-    }
 }
 
 impl Material {
@@ -187,7 +163,6 @@ impl Material {
         normal_texture: texture::Texture,
     ) -> Material {
         Material {
-            id: Material::generate_id(),
             name: String::from(name),
             diffuse_texture,
             normal_texture,
@@ -196,17 +171,10 @@ impl Material {
 }
 
 pub struct Mesh {
-    id: String,
     pub name: String,
     pub vertices: Vec<ModelVertex>,
     pub indices: Vec<u32>,
     pub material_id: usize,
-}
-
-impl ID for Mesh {
-    fn get_id(&self) -> &str {
-        &self.id
-    }
 }
 
 #[repr(C)]

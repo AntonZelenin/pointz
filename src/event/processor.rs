@@ -1,5 +1,4 @@
 use crate::scene::App;
-use iced_wgpu::Viewport;
 use iced_winit::winit::event::{
     DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, MouseButton, WindowEvent,
 };
@@ -39,9 +38,7 @@ pub fn process_events(
                     ..
                 } => {
                     app.camera_state.camera_mode = *state == ElementState::Pressed;
-                    app.window
-                        .window
-                        .set_cursor_visible(!app.camera_state.camera_mode);
+                    app.window.set_cursor_visible(!app.camera_state.camera_mode);
                 }
                 WindowEvent::MouseInput {
                     button: MouseButton::Left,
@@ -55,9 +52,7 @@ pub fn process_events(
                 WindowEvent::CursorMoved { position, .. } => {
                     if app.camera_state.camera_mode {
                         // make cursor stay at the same place
-                        app.window
-                            .window
-                            .set_cursor_position(app.gui.cursor_position)
+                        app.window.set_cursor_position(app.gui.cursor_position)
                             .unwrap();
                     } else {
                         app.gui.cursor_position = *position;
@@ -66,14 +61,14 @@ pub fn process_events(
                 WindowEvent::ModifiersChanged(new_modifiers) => {
                     modifiers = *new_modifiers;
                 }
-                WindowEvent::Resized(new_size) => {
-                    app.window.viewport = Viewport::with_physical_size(
-                        Size::new(new_size.width, new_size.height),
-                        app.window.window.scale_factor(),
-                    );
+                // WindowEvent::Resized(new_size) => {
+                    // app.window.viewport = Viewport::with_physical_size(
+                    //     Size::new(new_size.width, new_size.height),
+                    //     app.window.window.scale_factor(),
+                    // );
                     // todo add events to queue and call them only when redraw requested?
-                    app.window.resized = true;
-                }
+                    // app.window.resized = true;
+                // }
                 WindowEvent::CloseRequested => {
                     *control_flow = ControlFlow::Exit;
                 }
@@ -81,7 +76,7 @@ pub fn process_events(
             }
             if let Some(event) = iced_winit::conversion::window_event(
                 &event,
-                app.window.window.scale_factor(),
+                app.window.scale_factor(),
                 modifiers,
             ) {
                 app.gui.program_state.queue_event(event);
@@ -89,18 +84,19 @@ pub fn process_events(
         }
         Event::MainEventsCleared => {
             if !app.gui.program_state.is_queue_empty() {
+                let size = Size::new(app.window.inner_size().width as f32, app.window.inner_size().height as f32);
                 let _ = app.gui.program_state.update(
-                    app.window.viewport.logical_size(),
+                    size,
                     conversion::cursor_position(
                         app.gui.cursor_position,
-                        app.window.viewport.scale_factor(),
+                        app.window.scale_factor(),
                     ),
                     None,
                     &mut app.gui.renderer,
                     &mut app.gui.debug,
                 );
             }
-            app.window.window.request_redraw();
+            app.window.request_redraw();
         }
         Event::RedrawRequested(_) => {
             let now = std::time::Instant::now();
@@ -108,10 +104,10 @@ pub fn process_events(
             let dt = now - app.rendering.last_render_time;
             app.rendering.last_render_time = now;
             app.update(dt);
-            if app.window.resized {
-                app.resize(app.window.window.inner_size());
-                app.window.resized = false;
-            }
+            // if app.window.resized {
+            //     app.resize(app.window.window.inner_size());
+            //     app.window.resized = false;
+            // }
             app.render();
         }
         Event::DeviceEvent { event, .. } => match event {

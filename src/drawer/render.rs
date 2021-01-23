@@ -1,55 +1,104 @@
+use std::iter;
 use crate::buffer::Uniforms;
-use crate::lighting::Light;
-use crate::model::{ModelVertex, SimpleVertex, Vertex};
-use crate::scene::Window;
+use crate::model::{ModelVertex, Vertex};
 use crate::texture::Texture;
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
 use iced_winit::{futures, Color};
 use std::time::Instant;
-use crate::{drawer, texture};
+use crate::{texture, model, drawer, instance};
+use crate::drawer::model::ModelDrawer;
+use std::collections::HashMap;
+use iced_winit::winit::dpi::PhysicalSize;
 
-pub trait Drawer {
-    fn draw<'a>(&'a self, render_pass: &'a mut RenderPass<'a>);
+#[macro_export]
+macro_rules! declare_handle {
+    ($($name:ident),*) => {$(
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+        pub struct $name(pub(crate) usize);
+
+        impl $name {
+            pub fn get(&self) -> usize {
+                self.0
+            }
+        }
+    )*};
 }
 
-pub struct DebugDrawer {
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub vertex_buff: wgpu::Buffer,
-    pub index_buff: wgpu::Buffer,
-    pub uniform_bind_group: wgpu::BindGroup,
+declare_handle!(
+    MeshHandle,
+    MaterialHandle,
+    ObjectHandle
+);
+
+pub struct ResourceRegistry<T> {
+    mapping: HashMap<usize, T>,
 }
 
-impl Drawer for DebugDrawer {
-    fn draw<'a>(&'a self, render_pass: &'a mut RenderPass<'a>) {
-        render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_vertex_buffer(0, self.vertex_buff.slice(..));
-        render_pass.set_index_buffer(self.index_buff.slice(..));
-        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-        render_pass.draw_indexed(0..2, 0, 0..1);
+impl<T> ResourceRegistry<T> {
+    pub fn new() -> ResourceRegistry<T> {
+        ResourceRegistry {
+            mapping: HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, handle: usize, data: T) {
+        self.mapping.insert(handle, data);
+    }
+
+    pub fn get(&self, handle: usize) -> &T {
+        self.mapping.get(&handle).unwrap()
     }
 }
 
-pub struct Rendering {
+pub trait Drawer {
+    fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>);
+}
+
+// pub struct DebugDrawer {
+//     pub render_pipeline: wgpu::RenderPipeline,
+//     pub vertex_buff: wgpu::Buffer,
+//     pub index_buff: wgpu::Buffer,
+//     pub uniform_bind_group: wgpu::BindGroup,
+// }
+//
+// impl Drawer for DebugDrawer {
+//     fn draw<'a: 'b, 'b>(
+//         &'a self,
+//         render_pass: &'b mut RenderPass<'a>,
+//         _: &Vec<model::ModelBatch>
+//     ) {
+//         render_pass.set_pipeline(&self.render_pipeline);
+//         render_pass.set_vertex_buffer(0, self.vertex_buff.slice(..));
+//         render_pass.set_index_buffer(self.index_buff.slice(..));
+//         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+//         render_pass.draw_indexed(0..2, 0, 0..1);
+//     }
+// }
+
+pub struct RenderingState {
     pub sc_desc: wgpu::SwapChainDescriptor,
     pub swap_chain: wgpu::SwapChain,
+    pub surface: wgpu::Surface,
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
     pub uniforms: Uniforms,
     pub uniform_buffer: wgpu::Buffer,
-    // pub depth_texture: Texture,
     pub last_render_time: Instant,
-    drawers: Vec<Box<dyn Drawer>>,
+    model_drawer: ModelDrawer,
+    // debug_drawer: DebugDrawer,
+    pub depth_texture: Texture,
+    pub depth_texture_view: wgpu::TextureView,
 }
 
-impl Rendering {
-    pub fn new(instance: &wgpu::Instance, window: &Window) -> Rendering {
-        let (mut device, queue) = futures::executor::block_on(async {
+impl RenderingState {
+    pub fn new(instance: &wgpu::Instance, surface: wgpu::Surface, size: PhysicalSize<u32>) -> RenderingState {
+        let (device, queue) = futures::executor::block_on(async {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::Default,
-                    compatible_surface: Some(&window.surface),
+                    compatible_surface: Some(&surface),
                 })
                 .await
                 .expect("Request adapter");
@@ -66,7 +115,6 @@ impl Rendering {
                 .await
                 .expect("Failed to create device")
         });
-        let size = window.window.inner_size();
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -74,9 +122,10 @@ impl Rendering {
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
         };
-        let swap_chain = device.create_swap_chain(&window.surface, &sc_desc);
-        let depth_texture = Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
-        let mut uniforms = Uniforms::new();
+        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
+        let depth_texture = Texture::create_depth_texture(&sc_desc, "depth_texture");
+        let depth_texture_view = drawer::model::create_depth_view(&depth_texture, &device, &queue);
+        let uniforms = Uniforms::new();
         // todo will update it later using camera
         // uniforms.update_view_proj(&camera, &projection);
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -85,20 +134,31 @@ impl Rendering {
             label: Some("uniform buffer"),
         });
 
-        Rendering {
+        let model_drawer = ModelDrawer::build_model_drawer(&device);
+        // let debug_drawer = render::build_debug_drawer(&device, &uniform_buffer);
+
+
+        RenderingState {
             swap_chain,
             sc_desc,
+            surface,
             queue,
             device,
-            // depth_texture,
             last_render_time: std::time::Instant::now(),
             uniforms,
             uniform_buffer,
-            drawers: Vec::new(),
+            model_drawer,
+            // debug_drawer,
+            // todo do I need depth_texture here?
+            depth_texture,
+            depth_texture_view,
         }
     }
 
-    // todo render self of pass renderable and render it?
+    pub fn add_model(&mut self, model: model::Model, instances: Vec<instance::Instance>) -> ObjectHandle {
+        self.model_drawer.add_model(model, instances, &self.device,  &self.queue, &self.uniform_buffer)
+    }
+
     pub fn render(&mut self) {
         let frame = self
             .swap_chain
@@ -110,45 +170,46 @@ impl Rendering {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &frame.view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: {
-                        let [r, g, b, a] = Color::BLACK.into_linear();
-                        wgpu::LoadOp::Clear(wgpu::Color {
-                            r: r as f64,
-                            g: g as f64,
-                            b: b as f64,
-                            a: a as f64,
-                        })
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &frame.view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: {
+                            let [r, g, b, a] = Color::BLACK.into_linear();
+                            wgpu::LoadOp::Clear(wgpu::Color {
+                                r: r as f64,
+                                g: g as f64,
+                                b: b as f64,
+                                a: a as f64,
+                            })
+                        },
+                        store: true,
                     },
-                    store: true,
-                },
-            }],
-            // depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-            //     attachment: &self.depth_texture.view,
-            //     depth_ops: Some(wgpu::Operations {
-            //         load: wgpu::LoadOp::Clear(1.0),
-            //         store: true,
-            //     }),
-            //     stencil_ops: Some(wgpu::Operations {
-            //         load: wgpu::LoadOp::Clear(0),
-            //         store: true,
-            //     }),
-            // }),
-            depth_stencil_attachment: None,
-        });
-
-        for drawer in self.drawers.iter() {
-            drawer.draw(&mut render_pass);
+                }],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    attachment: &self.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0),
+                        store: true,
+                    }),
+                }),
+            });
+            self.model_drawer.draw(&mut render_pass);
         }
+
+        // self.debug_drawer.draw(&mut render_pass, model_data);
+        self.queue.submit(iter::once(encoder.finish()));
     }
 
-    pub fn add_drawer(&mut self, drawer: Box<dyn Drawer>) {
-        self.drawers.push(drawer);
-    }
+    // pub fn add_drawer(&mut self, drawer: Box<dyn Drawer>) {
+    //     self.drawers.push(drawer);
+    // }
 }
 
 pub fn build_render_pipeline(
@@ -199,63 +260,62 @@ pub fn build_render_pipeline(
     })
 }
 
-pub fn build_debug_drawer(device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> DebugDrawer {
-    let debug_uniform_bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStage::VERTEX,
-                ty: wgpu::BindingType::UniformBuffer {
-                    dynamic: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("debug_uniform_bind_group_layout"),
-        });
-    let debug_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &debug_uniform_bind_group_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
-        }],
-        label: Some("debug_uniform_bind_group"),
-    });
-    let debug_render_pipeline = {
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("debug pipeline"),
-            bind_group_layouts: &[&debug_uniform_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-        let vs_module =
-            device.create_shader_module(wgpu::include_spirv!("../shader/spv/debug.vert.spv"));
-        let fs_module =
-            device.create_shader_module(wgpu::include_spirv!("../shader/spv/debug.frag.spv"));
-        build_render_pipeline(device, &layout, vs_module, fs_module)
-    };
-    let debug_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Vertex Buffer"),
-        contents: bytemuck::cast_slice(&[
-            SimpleVertex {
-                position: [-30.0, 23.0, 25.0],
-            },
-            SimpleVertex {
-                position: [256.0, -918.0, 302.0],
-            },
-        ]),
-        usage: wgpu::BufferUsage::VERTEX,
-    });
-    const INDICES: &[u32] = &[0, 1];
-    let debug_index_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("Debug Index Buffer"),
-        contents: bytemuck::cast_slice(INDICES),
-        usage: wgpu::BufferUsage::INDEX,
-    });
-    // todo one structure with optional fields?
-    DebugDrawer {
-        render_pipeline: debug_render_pipeline,
-        vertex_buff: debug_buff,
-        index_buff: debug_index_buff,
-        uniform_bind_group: debug_uniform_bind_group,
-    }
-}
+// pub fn build_debug_drawer(device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> DebugDrawer {
+//     let debug_uniform_bind_group_layout =
+//         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+//             entries: &[wgpu::BindGroupLayoutEntry {
+//                 binding: 0,
+//                 visibility: wgpu::ShaderStage::VERTEX,
+//                 ty: wgpu::BindingType::UniformBuffer {
+//                     dynamic: false,
+//                     min_binding_size: None,
+//                 },
+//                 count: None,
+//             }],
+//             label: Some("debug_uniform_bind_group_layout"),
+//         });
+//     let debug_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+//         layout: &debug_uniform_bind_group_layout,
+//         entries: &[wgpu::BindGroupEntry {
+//             binding: 0,
+//             resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
+//         }],
+//         label: Some("debug_uniform_bind_group"),
+//     });
+//     let debug_render_pipeline = {
+//         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+//             label: Some("debug pipeline"),
+//             bind_group_layouts: &[&debug_uniform_bind_group_layout],
+//             push_constant_ranges: &[],
+//         });
+//         let vs_module =
+//             device.create_shader_module(wgpu::include_spirv!("../shader/spv/debug.vert.spv"));
+//         let fs_module =
+//             device.create_shader_module(wgpu::include_spirv!("../shader/spv/debug.frag.spv"));
+//         build_render_pipeline(device, &layout, vs_module, fs_module)
+//     };
+//     let debug_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+//         label: Some("Vertex Buffer"),
+//         contents: bytemuck::cast_slice(&[
+//             SimpleVertex {
+//                 position: [-30.0, 23.0, 25.0],
+//             },
+//             SimpleVertex {
+//                 position: [256.0, -918.0, 302.0],
+//             },
+//         ]),
+//         usage: wgpu::BufferUsage::VERTEX,
+//     });
+//     const INDICES: &[u32] = &[0, 1];
+//     let debug_index_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+//         label: Some("Debug Index Buffer"),
+//         contents: bytemuck::cast_slice(INDICES),
+//         usage: wgpu::BufferUsage::INDEX,
+//     });
+//     DebugDrawer {
+//         render_pipeline: debug_render_pipeline,
+//         vertex_buff: debug_buff,
+//         index_buff: debug_index_buff,
+//         uniform_bind_group: debug_uniform_bind_group,
+//     }
+// }
