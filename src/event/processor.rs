@@ -61,14 +61,13 @@ pub fn process_events(
                 WindowEvent::ModifiersChanged(new_modifiers) => {
                     modifiers = *new_modifiers;
                 }
-                // WindowEvent::Resized(new_size) => {
-                    // app.window.viewport = Viewport::with_physical_size(
-                    //     Size::new(new_size.width, new_size.height),
-                    //     app.window.window.scale_factor(),
-                    // );
-                    // todo add events to queue and call them only when redraw requested?
-                    // app.window.resized = true;
-                // }
+                WindowEvent::Resized(new_size) => {
+                    app.rendering.viewport = iced_wgpu::Viewport::with_physical_size(
+                        Size::new(new_size.width, new_size.height),
+                        app.window.scale_factor(),
+                    );
+                    app.resized = true;
+                }
                 WindowEvent::CloseRequested => {
                     *control_flow = ControlFlow::Exit;
                 }
@@ -84,12 +83,11 @@ pub fn process_events(
         }
         Event::MainEventsCleared => {
             if !app.gui.program_state.is_queue_empty() {
-                let size = Size::new(app.window.inner_size().width as f32, app.window.inner_size().height as f32);
                 let _ = app.gui.program_state.update(
-                    size,
+                    app.rendering.viewport.logical_size(),
                     conversion::cursor_position(
                         app.gui.cursor_position,
-                        app.window.scale_factor(),
+                        app.rendering.viewport.scale_factor(),
                     ),
                     None,
                     &mut app.gui.renderer,
@@ -104,10 +102,10 @@ pub fn process_events(
             let dt = now - app.rendering.last_render_time;
             app.rendering.last_render_time = now;
             app.update(dt);
-            // if app.window.resized {
-            //     app.resize(app.window.window.inner_size());
-            //     app.window.resized = false;
-            // }
+            if app.resized {
+                app.resize();
+                app.resized = false;
+            }
             app.render();
         }
         Event::DeviceEvent { event, .. } => match event {

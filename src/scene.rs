@@ -1,7 +1,7 @@
 use crate::camera::{Camera, CameraController, CursorWatcher, Projection};
 use crate::drawer::render::{RenderingState, ObjectHandle};
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
-use crate::{controls, event, model};
+use crate::{controls, event, model, drawer};
 use crate::model::{Model, ModelBatch};
 use crate::widgets::fps;
 use cgmath::prelude::*;
@@ -145,6 +145,7 @@ impl CameraState {
 
 pub struct App {
     pub window: Window,
+    pub resized: bool,
     pub rendering: RenderingState,
     pub gui: GUI,
     pub camera_state: CameraState,
@@ -161,7 +162,7 @@ impl App {
             builder.build(&event_loop).expect("Could not build window")
         };
         let surface = unsafe { instance.create_surface(&window) };
-        let rendering = RenderingState::new(&instance, surface, window.inner_size());
+        let rendering = RenderingState::new(&instance, surface, window.inner_size(), window.scale_factor());
         let gui = GUI::new(&rendering.device, window.scale_factor(), window.inner_size());
         let camera_state = CameraState::new(rendering.sc_desc.width, rendering.sc_desc.height);
         let mut app = App {
@@ -170,6 +171,7 @@ impl App {
             gui,
             camera_state,
             objects: Vec::new(),
+            resized: false,
         };
         app.objects = app.add_models();
 
@@ -224,17 +226,18 @@ impl App {
         object_handles
     }
 
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+    pub fn resize(&mut self) {
+        let new_size = self.window.inner_size();
         self.camera_state
             .projection
             .resize(new_size.width, new_size.height);
-        // todo event
         self.rendering.sc_desc.width = new_size.width;
         self.rendering.sc_desc.height = new_size.height;
-        self.rendering.depth_texture = Texture::create_depth_texture(
+        let depth_texture = Texture::create_depth_texture(
             &self.rendering.sc_desc,
             "depth_texture",
         );
+        self.rendering.depth_texture_view = drawer::model::create_depth_view(&depth_texture, &self.rendering.device, &self.rendering.queue);
         self.rendering.swap_chain = self
             .rendering
             .device

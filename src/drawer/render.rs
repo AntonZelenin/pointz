@@ -78,6 +78,7 @@ pub trait Drawer {
 // }
 
 pub struct RenderingState {
+    pub viewport: iced_wgpu::Viewport,
     pub sc_desc: wgpu::SwapChainDescriptor,
     pub swap_chain: wgpu::SwapChain,
     pub surface: wgpu::Surface,
@@ -88,12 +89,11 @@ pub struct RenderingState {
     pub last_render_time: Instant,
     model_drawer: ModelDrawer,
     // debug_drawer: DebugDrawer,
-    pub depth_texture: Texture,
     pub depth_texture_view: wgpu::TextureView,
 }
 
 impl RenderingState {
-    pub fn new(instance: &wgpu::Instance, surface: wgpu::Surface, size: PhysicalSize<u32>) -> RenderingState {
+    pub fn new(instance: &wgpu::Instance, surface: wgpu::Surface, size: PhysicalSize<u32>, scale_factor: f64) -> RenderingState {
         let (device, queue) = futures::executor::block_on(async {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
@@ -136,9 +136,13 @@ impl RenderingState {
 
         let model_drawer = ModelDrawer::build_model_drawer(&device);
         // let debug_drawer = render::build_debug_drawer(&device, &uniform_buffer);
-
+        let viewport = iced_wgpu::Viewport::with_physical_size(
+            iced::Size::new(size.width, size.height),
+            scale_factor
+        );
 
         RenderingState {
+            viewport,
             swap_chain,
             sc_desc,
             surface,
@@ -150,7 +154,6 @@ impl RenderingState {
             model_drawer,
             // debug_drawer,
             // todo do I need depth_texture here?
-            depth_texture,
             depth_texture_view,
         }
     }
