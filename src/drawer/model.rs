@@ -125,25 +125,18 @@ impl ModelDrawer {
     ) -> ObjectHandle {
         let object_handle = ObjectHandle(self.index_driver.next_id());
         let mut internal_meshes: Vec<InternalMesh> = vec![];
-        for (id, material) in model.materials.iter().enumerate() {
-            let material_bind_group = self.create_material_bind_group(material, device, queue);
-            self.material_bind_group_registry.insert(id, material_bind_group);
-        }
+        let material_ids = self.create_material_bind_groups(&model, &device, &queue);
         for mesh in model.meshes.iter() {
             let mesh_handle = MeshHandle(self.index_driver.next_id());
             self.index_buffer_registry.insert(mesh_handle.0, self.create_mesh_index_buffer(&mesh, device));
             self.vertex_buffer_registry.insert(mesh_handle.0, self.create_mesh_vertex_buffer(mesh, device));
-            let material_handle = MaterialHandle(mesh.material_id);
+            let material_handle = MaterialHandle(material_ids[mesh.material_id]);
             internal_meshes.push(InternalMesh {
                 count: mesh.indices.len(),
                 handle: mesh_handle,
                 material_handle
             });
         }
-        // for material in model.materials.iter() {
-        //     let material_handle = MaterialHandle(self.index_driver.next_id());
-        //     self.material_bind_group_registry.insert(material_handle.0, self.create_material_bind_group(material, device));
-        // };
         let num_instances = instances.len();
         self.uniform_bind_group_registry.insert(object_handle.0, self.create_model_uniform_bind_group(instances, device, uniform_buffer));
         self.objects.push(InternalObject {
@@ -152,6 +145,18 @@ impl ModelDrawer {
             internal_meshes,
         });
         object_handle
+    }
+
+    /// Returns ordered material ids, meshes will take actual id by index using it's mesh.material_id
+    fn create_material_bind_groups(&mut self, model: &model::Model, device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<usize> {
+        let mut ids: Vec<usize> = vec![];
+        for material in model.materials.iter() {
+            let new_id = self.index_driver.next_id();
+            let material_bind_group = self.create_material_bind_group(material, device, queue);
+            self.material_bind_group_registry.insert(new_id, material_bind_group);
+            ids.push(new_id);
+        };
+        ids
     }
 
     fn create_mesh_index_buffer(&self, mesh: &model::Mesh, device: &wgpu::Device) -> wgpu::Buffer {
