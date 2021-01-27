@@ -147,7 +147,6 @@ pub struct App {
     pub window: Window,
     pub resized: bool,
     pub rendering: RenderingState,
-    pub gui: GUI,
     pub camera_state: CameraState,
     objects: Vec<ObjectHandle>,
 }
@@ -163,12 +162,10 @@ impl App {
         };
         let surface = unsafe { instance.create_surface(&window) };
         let rendering = RenderingState::new(&instance, surface, window.inner_size(), window.scale_factor());
-        let gui = GUI::new(&rendering.device, window.scale_factor(), window.inner_size());
         let camera_state = CameraState::new(rendering.sc_desc.width, rendering.sc_desc.height);
         let mut app = App {
             window,
             rendering,
-            gui,
             camera_state,
             objects: Vec::new(),
             resized: false,
@@ -276,11 +273,11 @@ impl App {
             // );
         // }
 
-        self.gui.fps_meter.push(dt);
-        self.gui
+        self.rendering.gui.fps_meter.push(dt);
+        self.rendering.gui
             .program_state
             .queue_message(controls::Message::UpdateFps(
-                self.gui.fps_meter.get_average(),
+                self.rendering.gui.fps_meter.get_average(),
             ));
     }
 
@@ -338,6 +335,6 @@ impl App {
     // }
 
     pub fn render(&mut self) {
-        self.rendering.render();
+        self.rendering.render(&self.window);
     }
 }

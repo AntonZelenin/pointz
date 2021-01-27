@@ -52,10 +52,10 @@ pub fn process_events(
                 WindowEvent::CursorMoved { position, .. } => {
                     if app.camera_state.camera_mode {
                         // make cursor stay at the same place
-                        app.window.set_cursor_position(app.gui.cursor_position)
+                        app.window.set_cursor_position(app.rendering.gui.cursor_position)
                             .unwrap();
                     } else {
-                        app.gui.cursor_position = *position;
+                        app.rendering.gui.cursor_position = *position;
                     }
                 }
                 WindowEvent::ModifiersChanged(new_modifiers) => {
@@ -78,20 +78,20 @@ pub fn process_events(
                 app.window.scale_factor(),
                 modifiers,
             ) {
-                app.gui.program_state.queue_event(event);
+                app.rendering.gui.program_state.queue_event(event);
             }
         }
         Event::MainEventsCleared => {
-            if !app.gui.program_state.is_queue_empty() {
-                let _ = app.gui.program_state.update(
+            if !app.rendering.gui.program_state.is_queue_empty() {
+                let _ = app.rendering.gui.program_state.update(
                     app.rendering.viewport.logical_size(),
                     conversion::cursor_position(
-                        app.gui.cursor_position,
+                        app.rendering.gui.cursor_position,
                         app.rendering.viewport.scale_factor(),
                     ),
                     None,
-                    &mut app.gui.renderer,
-                    &mut app.gui.debug,
+                    &mut app.rendering.gui.renderer,
+                    &mut app.rendering.gui.debug,
                 );
             }
             app.window.request_redraw();

@@ -5,12 +5,14 @@ use crate::texture::Texture;
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
-use iced_winit::{futures, Color};
+use iced_winit::futures;
 use std::time::Instant;
 use crate::{texture, model, drawer, instance};
 use crate::drawer::model::ModelDrawer;
 use std::collections::HashMap;
 use iced_winit::winit::dpi::PhysicalSize;
+use crate::scene::GUI;
+use iced_winit::winit::window::Window;
 
 #[macro_export]
 macro_rules! declare_handle {
@@ -78,6 +80,7 @@ pub trait Drawer {
 // }
 
 pub struct RenderingState {
+    pub gui: GUI,
     pub viewport: iced_wgpu::Viewport,
     pub sc_desc: wgpu::SwapChainDescriptor,
     pub swap_chain: wgpu::SwapChain,
@@ -140,8 +143,10 @@ impl RenderingState {
             iced::Size::new(size.width, size.height),
             scale_factor
         );
+        let gui = GUI::new(&device, scale_factor, size);
 
         RenderingState {
+            gui,
             viewport,
             swap_chain,
             sc_desc,
@@ -162,7 +167,7 @@ impl RenderingState {
         self.model_drawer.add_model(model, instances, &self.device,  &self.queue, &self.uniform_buffer)
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self, window: &Window) {
         let frame = self
             .swap_chain
             .get_current_frame()
@@ -180,7 +185,7 @@ impl RenderingState {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: {
-                            let [r, g, b, a] = Color::BLACK.into_linear();
+                            let [r, g, b, a] = self.gui.program_state.program().background_color().into_linear();
                             wgpu::LoadOp::Clear(wgpu::Color {
                                 r: r as f64,
                                 g: g as f64,
@@ -206,13 +211,23 @@ impl RenderingState {
             self.model_drawer.draw(&mut render_pass);
         }
 
+        let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
+        let mouse_interaction = self.gui.renderer.backend_mut().draw(
+            &mut self.device,
+            &mut staging_belt,
+            &mut encoder,
+            &frame.view,
+            &self.viewport,
+            self.gui.program_state.primitive(),
+            &self.gui.debug.overlay(),
+        );
+        // todo event to remove window from here?
+        window.set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
+        staging_belt.finish();
+
         // self.debug_drawer.draw(&mut render_pass, model_data);
         self.queue.submit(iter::once(encoder.finish()));
     }
-
-    // pub fn add_drawer(&mut self, drawer: Box<dyn Drawer>) {
-    //     self.drawers.push(drawer);
-    // }
 }
 
 pub fn build_render_pipeline(
