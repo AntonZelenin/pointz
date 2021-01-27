@@ -7,11 +7,7 @@ use iced_winit::{conversion, Size};
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
-pub fn process_events(
-    app: &mut App,
-    event: &Event<()>,
-    control_flow: &mut ControlFlow,
-) {
+pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut ControlFlow) {
     match event {
         Event::WindowEvent { event, .. } => {
             let mut modifiers = ModifiersState::default();
@@ -52,7 +48,8 @@ pub fn process_events(
                 WindowEvent::CursorMoved { position, .. } => {
                     if app.camera_state.camera_mode {
                         // make cursor stay at the same place
-                        app.window.set_cursor_position(app.rendering.gui.cursor_position)
+                        app.window
+                            .set_cursor_position(app.rendering.gui.cursor_position)
                             .unwrap();
                     } else {
                         app.rendering.gui.cursor_position = *position;
@@ -73,11 +70,9 @@ pub fn process_events(
                 }
                 _ => {}
             }
-            if let Some(event) = iced_winit::conversion::window_event(
-                &event,
-                app.window.scale_factor(),
-                modifiers,
-            ) {
+            if let Some(event) =
+                iced_winit::conversion::window_event(&event, app.window.scale_factor(), modifiers)
+            {
                 app.rendering.gui.program_state.queue_event(event);
             }
         }

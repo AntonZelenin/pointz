@@ -1,18 +1,18 @@
-use std::iter;
 use crate::buffer::Uniforms;
+use crate::drawer::model::ModelDrawer;
 use crate::model::{ModelVertex, Vertex};
+use crate::scene::GUI;
 use crate::texture::Texture;
+use crate::{drawer, instance, model, texture};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
 use iced_winit::futures;
-use std::time::Instant;
-use crate::{texture, model, drawer, instance};
-use crate::drawer::model::ModelDrawer;
-use std::collections::HashMap;
 use iced_winit::winit::dpi::PhysicalSize;
-use crate::scene::GUI;
 use iced_winit::winit::window::Window;
+use std::collections::HashMap;
+use std::iter;
+use std::time::Instant;
 
 #[macro_export]
 macro_rules! declare_handle {
@@ -28,11 +28,7 @@ macro_rules! declare_handle {
     )*};
 }
 
-declare_handle!(
-    MeshHandle,
-    MaterialHandle,
-    ObjectHandle
-);
+declare_handle!(MeshHandle, MaterialHandle, ObjectHandle);
 
 pub struct ResourceRegistry<T> {
     mapping: HashMap<usize, T>,
@@ -96,7 +92,12 @@ pub struct RenderingState {
 }
 
 impl RenderingState {
-    pub fn new(instance: &wgpu::Instance, surface: wgpu::Surface, size: PhysicalSize<u32>, scale_factor: f64) -> RenderingState {
+    pub fn new(
+        instance: &wgpu::Instance,
+        surface: wgpu::Surface,
+        size: PhysicalSize<u32>,
+        scale_factor: f64,
+    ) -> RenderingState {
         let (device, queue) = futures::executor::block_on(async {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
@@ -141,7 +142,7 @@ impl RenderingState {
         // let debug_drawer = render::build_debug_drawer(&device, &uniform_buffer);
         let viewport = iced_wgpu::Viewport::with_physical_size(
             iced::Size::new(size.width, size.height),
-            scale_factor
+            scale_factor,
         );
         let gui = GUI::new(&device, scale_factor, size);
 
@@ -163,8 +164,18 @@ impl RenderingState {
         }
     }
 
-    pub fn add_model(&mut self, model: model::Model, instances: Vec<instance::Instance>) -> ObjectHandle {
-        self.model_drawer.add_model(model, instances, &self.device,  &self.queue, &self.uniform_buffer)
+    pub fn add_model(
+        &mut self,
+        model: model::Model,
+        instances: Vec<instance::Instance>,
+    ) -> ObjectHandle {
+        self.model_drawer.add_model(
+            model,
+            instances,
+            &self.device,
+            &self.queue,
+            &self.uniform_buffer,
+        )
     }
 
     pub fn render(&mut self, window: &Window) {
@@ -185,7 +196,12 @@ impl RenderingState {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: {
-                            let [r, g, b, a] = self.gui.program_state.program().background_color().into_linear();
+                            let [r, g, b, a] = self
+                                .gui
+                                .program_state
+                                .program()
+                                .background_color()
+                                .into_linear();
                             wgpu::LoadOp::Clear(wgpu::Color {
                                 r: r as f64,
                                 g: g as f64,

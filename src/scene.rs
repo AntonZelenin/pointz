@@ -1,19 +1,19 @@
 use crate::camera::{Camera, CameraController, CursorWatcher, Projection};
-use crate::drawer::render::{RenderingState, ObjectHandle};
+use crate::drawer::render::{ObjectHandle, RenderingState};
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
-use crate::{controls, event, model, drawer};
 use crate::model::{Model, ModelBatch};
+use crate::texture::Texture;
 use crate::widgets::fps;
+use crate::{controls, drawer, event, model};
 use cgmath::prelude::*;
 use cgmath::{Deg, Point3, Quaternion, Vector3};
 use iced_wgpu::wgpu;
 use iced_wgpu::{Backend, Renderer, Settings};
 use iced_winit::winit::event_loop::EventLoop;
+use iced_winit::winit::window::{Window, WindowBuilder};
 use iced_winit::{conversion, program, winit, Debug, Size};
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
-use iced_winit::winit::window::{WindowBuilder, Window};
-use crate::texture::Texture;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
@@ -161,7 +161,12 @@ impl App {
             builder.build(&event_loop).expect("Could not build window")
         };
         let surface = unsafe { instance.create_surface(&window) };
-        let rendering = RenderingState::new(&instance, surface, window.inner_size(), window.scale_factor());
+        let rendering = RenderingState::new(
+            &instance,
+            surface,
+            window.inner_size(),
+            window.scale_factor(),
+        );
         let camera_state = CameraState::new(rendering.sc_desc.width, rendering.sc_desc.height);
         let mut app = App {
             window,
@@ -177,12 +182,10 @@ impl App {
         })
     }
 
-    fn add_models(&mut self) -> Vec<ObjectHandle>{
+    fn add_models(&mut self) -> Vec<ObjectHandle> {
         let mut obj_models: Vec<Model> = Vec::new();
         for model_path in MODELS.iter() {
-            obj_models.push(
-                model::Model::load(model_path).unwrap(),
-            );
+            obj_models.push(model::Model::load(model_path).unwrap());
         }
         let mut model_batches: Vec<ModelBatch> = Vec::new();
         let mut i: i32 = -1;
@@ -218,7 +221,10 @@ impl App {
         }
         let mut object_handles: Vec<ObjectHandle> = vec![];
         for model_batch in model_batches {
-            object_handles.push(self.rendering.add_model(model_batch.model, model_batch.instances));
+            object_handles.push(
+                self.rendering
+                    .add_model(model_batch.model, model_batch.instances),
+            );
         }
         object_handles
     }
@@ -230,11 +236,12 @@ impl App {
             .resize(new_size.width, new_size.height);
         self.rendering.sc_desc.width = new_size.width;
         self.rendering.sc_desc.height = new_size.height;
-        let depth_texture = Texture::create_depth_texture(
-            &self.rendering.sc_desc,
-            "depth_texture",
+        let depth_texture = Texture::create_depth_texture(&self.rendering.sc_desc, "depth_texture");
+        self.rendering.depth_texture_view = drawer::model::create_depth_view(
+            &depth_texture,
+            &self.rendering.device,
+            &self.rendering.queue,
         );
-        self.rendering.depth_texture_view = drawer::model::create_depth_view(&depth_texture, &self.rendering.device, &self.rendering.queue);
         self.rendering.swap_chain = self
             .rendering
             .device
@@ -260,21 +267,22 @@ impl App {
         //         instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
         //     }
         //     todo move to rendering
-            // let instance_data = model_batch
-            //     .instances
-            //     .iter()
-            //     .map(Instance::to_raw)
-            //     .collect::<Vec<_>>();
-            // todo update in the ModelDrawer
-            // self.rendering.queue.write_buffer(
-            //     &model_data.instance_buffer,
-            //     0,
-            //     bytemuck::cast_slice(&instance_data),
-            // );
+        // let instance_data = model_batch
+        //     .instances
+        //     .iter()
+        //     .map(Instance::to_raw)
+        //     .collect::<Vec<_>>();
+        // todo update in the ModelDrawer
+        // self.rendering.queue.write_buffer(
+        //     &model_data.instance_buffer,
+        //     0,
+        //     bytemuck::cast_slice(&instance_data),
+        // );
         // }
 
         self.rendering.gui.fps_meter.push(dt);
-        self.rendering.gui
+        self.rendering
+            .gui
             .program_state
             .queue_message(controls::Message::UpdateFps(
                 self.rendering.gui.fps_meter.get_average(),

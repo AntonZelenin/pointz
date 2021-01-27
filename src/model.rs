@@ -55,14 +55,9 @@ impl Model {
                 texture::Texture::load(containing_folder.join(diffuse_path), false)?;
 
             let normal_path = mat.normal_texture;
-            let normal_texture =
-                texture::Texture::load(containing_folder.join(normal_path), true)?;
+            let normal_texture = texture::Texture::load(containing_folder.join(normal_path), true)?;
 
-            materials.push(Material::new(
-                &mat.name,
-                diffuse_texture,
-                normal_texture,
-            ));
+            materials.push(Material::new(&mat.name, diffuse_texture, normal_texture));
         }
 
         let mut meshes = Vec::new();
@@ -134,7 +129,7 @@ impl Model {
                 vertices[c[1] as usize].bitangent = bitangent;
                 vertices[c[2] as usize].bitangent = bitangent;
             }
-            
+
             meshes.push(Mesh {
                 name: m.name,
                 vertices,
@@ -143,10 +138,7 @@ impl Model {
             });
         }
 
-        Ok(Model {
-            meshes,
-            materials
-        })
+        Ok(Model { meshes, materials })
     }
 }
 

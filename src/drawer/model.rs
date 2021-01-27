@@ -1,12 +1,12 @@
 use crate::drawer::render;
+use crate::drawer::render::{MaterialHandle, MeshHandle, ObjectHandle, ResourceRegistry};
 use crate::lighting::Light;
-use crate::{model, instance, texture};
-use std::ops::Range;
-use iced_wgpu::wgpu;
-use iced_wgpu::wgpu::RenderPass;
-use iced_wgpu::wgpu::util::DeviceExt;
-use crate::drawer::render::{ObjectHandle, ResourceRegistry, MeshHandle, MaterialHandle};
 use crate::texture::TextureType;
+use crate::{instance, model, texture};
+use iced_wgpu::wgpu;
+use iced_wgpu::wgpu::util::DeviceExt;
+use iced_wgpu::wgpu::RenderPass;
+use std::ops::Range;
 
 struct InternalMesh {
     handle: MeshHandle,
@@ -26,9 +26,7 @@ pub struct IndexDriver {
 
 impl IndexDriver {
     pub fn new() -> IndexDriver {
-        IndexDriver {
-            current_index: 0,
-        }
+        IndexDriver { current_index: 0 }
     }
 
     pub fn next_id(&mut self) -> usize {
@@ -121,24 +119,29 @@ impl ModelDrawer {
         instances: Vec<instance::Instance>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        uniform_buffer: &wgpu::Buffer
+        uniform_buffer: &wgpu::Buffer,
     ) -> ObjectHandle {
         let object_handle = ObjectHandle(self.index_driver.next_id());
         let mut internal_meshes: Vec<InternalMesh> = vec![];
         let material_ids = self.create_material_bind_groups(&model, &device, &queue);
         for mesh in model.meshes.iter() {
             let mesh_handle = MeshHandle(self.index_driver.next_id());
-            self.index_buffer_registry.insert(mesh_handle.0, self.create_mesh_index_buffer(&mesh, device));
-            self.vertex_buffer_registry.insert(mesh_handle.0, self.create_mesh_vertex_buffer(mesh, device));
+            self.index_buffer_registry
+                .insert(mesh_handle.0, self.create_mesh_index_buffer(&mesh, device));
+            self.vertex_buffer_registry
+                .insert(mesh_handle.0, self.create_mesh_vertex_buffer(mesh, device));
             let material_handle = MaterialHandle(material_ids[mesh.material_id]);
             internal_meshes.push(InternalMesh {
                 count: mesh.indices.len(),
                 handle: mesh_handle,
-                material_handle
+                material_handle,
             });
         }
         let num_instances = instances.len();
-        self.uniform_bind_group_registry.insert(object_handle.0, self.create_model_uniform_bind_group(instances, device, uniform_buffer));
+        self.uniform_bind_group_registry.insert(
+            object_handle.0,
+            self.create_model_uniform_bind_group(instances, device, uniform_buffer),
+        );
         self.objects.push(InternalObject {
             handle: object_handle.clone(),
             num_instances,
@@ -148,14 +151,20 @@ impl ModelDrawer {
     }
 
     /// Returns ordered material ids, meshes will take actual id by index using it's mesh.material_id
-    fn create_material_bind_groups(&mut self, model: &model::Model, device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<usize> {
+    fn create_material_bind_groups(
+        &mut self,
+        model: &model::Model,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Vec<usize> {
         let mut ids: Vec<usize> = vec![];
         for material in model.materials.iter() {
             let new_id = self.index_driver.next_id();
             let material_bind_group = self.create_material_bind_group(material, device, queue);
-            self.material_bind_group_registry.insert(new_id, material_bind_group);
+            self.material_bind_group_registry
+                .insert(new_id, material_bind_group);
             ids.push(new_id);
-        };
+        }
         ids
     }
 
@@ -175,7 +184,12 @@ impl ModelDrawer {
         })
     }
 
-    fn create_material_bind_group(&mut self, material: &model::Material, device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::BindGroup {
+    fn create_material_bind_group(
+        &mut self,
+        material: &model::Material,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> wgpu::BindGroup {
         let layout = &self.texture_bind_group_layout;
         let diffuse_view = create_view(&material.diffuse_texture, device, queue);
         let normal_view = create_view(&material.normal_texture, device, queue);
@@ -222,8 +236,16 @@ impl ModelDrawer {
     //     self.bind_group_registry.remove(&model_id);
     // }
 
-    fn create_model_uniform_bind_group(&self, instances: Vec<instance::Instance>, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> wgpu::BindGroup {
-        let instance_data = instances.iter().map(instance::Instance::to_raw).collect::<Vec<_>>();
+    fn create_model_uniform_bind_group(
+        &self,
+        instances: Vec<instance::Instance>,
+        device: &wgpu::Device,
+        uniform_buffer: &wgpu::Buffer,
+    ) -> wgpu::BindGroup {
+        let instance_data = instances
+            .iter()
+            .map(instance::Instance::to_raw)
+            .collect::<Vec<_>>();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&instance_data),
             usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
@@ -353,7 +375,9 @@ impl ModelDrawer {
     ) {
         let vertex_buffer = self.vertex_buffer_registry.get(mesh.handle.0);
         let index_buffer = self.index_buffer_registry.get(mesh.handle.0);
-        let material_bind_group = self.material_bind_group_registry.get(mesh.material_handle.0);
+        let material_bind_group = self
+            .material_bind_group_registry
+            .get(mesh.material_handle.0);
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         render_pass.set_index_buffer(index_buffer.slice(..));
         render_pass.set_bind_group(0, uniform_bind_group, &[]);
@@ -364,22 +388,19 @@ impl ModelDrawer {
 }
 
 impl render::Drawer for ModelDrawer {
-    fn draw<'a: 'b, 'b>(
-        &'a self,
-        render_pass: &'b mut RenderPass<'a>
-    ) {
+    fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
         for object in self.objects.iter() {
-            self.draw_model_instanced(
-                render_pass,
-                &object,
-                &(0..object.num_instances as u32),
-            );
+            self.draw_model_instanced(render_pass, &object, &(0..object.num_instances as u32));
         }
     }
 }
 
-pub fn create_view(texture: &texture::Texture, device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::TextureView {
+pub fn create_view(
+    texture: &texture::Texture,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> wgpu::TextureView {
     let wgpu_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(&texture.label),
         size: wgpu::Extent3d {
@@ -420,7 +441,11 @@ pub fn create_view(texture: &texture::Texture, device: &wgpu::Device, queue: &wg
     wgpu_texture.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-pub fn create_depth_view(texture: &texture::Texture, device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::TextureView {
+pub fn create_depth_view(
+    texture: &texture::Texture,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> wgpu::TextureView {
     let wgpu_texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(&texture.label),
         size: wgpu::Extent3d {

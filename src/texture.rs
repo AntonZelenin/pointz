@@ -1,7 +1,7 @@
 use anyhow::*;
+use iced_wgpu::wgpu;
 use image::{GenericImageView, RgbaImage};
 use std::path::Path;
-use iced_wgpu::wgpu;
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -10,10 +10,10 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 //     pub view: wgpu::TextureView,
 //     pub sampler: wgpu::Sampler,
 // }
-// 
+//
 // impl Texture {
 //     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-// 
+//
 //     pub fn from_bytes(
 //         device: &wgpu::Device,
 //         queue: &wgpu::Queue,
@@ -24,7 +24,7 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 //         let img = image::load_from_memory(bytes)?;
 //         Self::from_image(device, queue, &img, Some(label), is_normal_map)
 //     }
-// 
+//
 //     pub fn from_image(
 //         device: &wgpu::Device,
 //         queue: &wgpu::Queue,
@@ -36,7 +36,7 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 //         // todo it might break something, delete todo if all is working
 //         // todo I can store rgba_image in a Texture
 //         let rgba_image = img.to_rgba8();
-// 
+//
 //         let size = wgpu::Extent3d {
 //             width: dimensions.0,
 //             height: dimensions.1,
@@ -55,7 +55,7 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 //             },
 //             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
 //         });
-// 
+//
 //         queue.write_texture(
 //             wgpu::TextureCopyView {
 //                 texture: &texture,
@@ -70,7 +70,7 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 //             },
 //             size,
 //         );
-// 
+//
 //         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 //         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
 //             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -81,14 +81,14 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 //             mipmap_filter: wgpu::FilterMode::Nearest,
 //             ..Default::default()
 //         });
-// 
+//
 //         Ok(Self {
 //             texture,
 //             view,
 //             sampler,
 //         })
 //     }
-// 
+//
 //     pub fn create_depth_texture(
 //         device: &wgpu::Device,
 //         sc_desc: &wgpu::SwapChainDescriptor,
@@ -111,7 +111,7 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 //                 | wgpu::TextureUsage::COPY_SRC,
 //         };
 //         let texture = device.create_texture(&desc);
-// 
+//
 //         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 //         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
 //             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -125,14 +125,14 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 //             compare: Some(wgpu::CompareFunction::LessEqual),
 //             ..Default::default()
 //         });
-// 
+//
 //         Self {
 //             texture,
 //             view,
 //             sampler,
 //         }
 //     }
-// 
+//
 //     pub fn load<P: AsRef<Path>>(
 //         device: &wgpu::Device,
 //         queue: &wgpu::Queue,
@@ -141,7 +141,7 @@ pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 //     ) -> Result<Self> {
 //         let path_copy = path.as_ref().to_path_buf();
 //         let label = path_copy.to_str();
-// 
+//
 //         let img = image::open(path)?;
 //         // todo it will crash if label is longer then 64
 //         Self::from_image(device, queue, &img, label, is_normal_map)
@@ -162,20 +162,12 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub fn from_bytes(
-        bytes: &[u8],
-        label: &str,
-        is_normal_map: bool,
-    ) -> Result<Texture> {
+    pub fn from_bytes(bytes: &[u8], label: &str, is_normal_map: bool) -> Result<Texture> {
         let img = image::load_from_memory(bytes)?;
         Self::from_image(&img, label, is_normal_map)
     }
 
-    pub fn from_image(
-        img: &image::DynamicImage,
-        label: &str,
-        is_normal_map: bool,
-    ) -> Result<Self> {
+    pub fn from_image(img: &image::DynamicImage, label: &str, is_normal_map: bool) -> Result<Self> {
         let dimensions = img.dimensions();
         // todo it might break something, delete todo if all is working
         // todo I can store rgba_image in a Texture
@@ -206,10 +198,7 @@ impl Texture {
         Self::from_image(&img, label, is_normal_map)
     }
 
-    pub fn create_depth_texture(
-        sc_desc: &wgpu::SwapChainDescriptor,
-        label: &str,
-    ) -> Self {
+    pub fn create_depth_texture(sc_desc: &wgpu::SwapChainDescriptor, label: &str) -> Self {
         // let size = wgpu::Extent3d {
         //     width: sc_desc.width,
         //     height: sc_desc.height,
