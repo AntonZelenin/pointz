@@ -159,7 +159,6 @@ impl RenderingState {
             uniform_buffer,
             model_drawer,
             // debug_drawer,
-            // todo do I need depth_texture here?
             depth_texture_view,
         }
     }
