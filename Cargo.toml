@@ -1,6 +1,6 @@
 [package]
 name = "pointz"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Anton Zelenin <ntnzelenin@gmail.com>"]
 edition = "2018"
 
@@ -10,11 +10,11 @@ edition = "2018"
 iced = {path = '../../other_repos/iced'}
 iced_winit = {path = '../../other_repos/iced/winit'}
 iced_wgpu = {path = '../../other_repos/iced/wgpu'}
-cgmath = "0.17"
-bytemuck = "1.3"
-shaderc = "0.6"
-image = "0.23"
+cgmath = "0.18"
+bytemuck = "1.4.1"
+shaderc = "0.7"
+image = "0.23.12"
 log = "0.4.11"
-env_logger = "0.7.1"
-tobj = "2.0.2"
-anyhow = "1.0"
+env_logger = "0.8.2"
+tobj = "2.0.3"
+anyhow = "1.0.37"

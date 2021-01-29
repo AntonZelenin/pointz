@@ -2,19 +2,19 @@ use iced_wgpu::Renderer;
 use iced_winit::{
     button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text,
 };
-use iced_winit::winit::dpi::PhysicalPosition;
 
 pub struct GUI {
     background_color: Color,
     buttons: [button::State; 1],
     fps: i32,
-    pub cursor_position: PhysicalPosition<f64>,
+    debug_info: String,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     ChangeBackgroundColor,
     UpdateFps(i32),
+    DebugInfo(String),
 }
 
 impl GUI {
@@ -23,7 +23,7 @@ impl GUI {
             background_color: Color::BLACK,
             buttons: Default::default(),
             fps: 0,
-            cursor_position: PhysicalPosition::new(0.0, 0.0),
+            debug_info: "".to_string(),
         }
     }
 
@@ -44,9 +44,12 @@ impl Program for GUI {
                 } else {
                     Color::BLACK
                 };
-            },
+            }
             Message::UpdateFps(val) => {
                 self.fps = val;
+            }
+            Message::DebugInfo(s) => {
+                self.debug_info = s;
             }
         }
         Command::none()
@@ -63,8 +66,13 @@ impl Program for GUI {
                     .align_items(Align::Start)
                     .push(
                         Text::new(self.fps.to_string())
-                        .size(30)
-                        .color([0.8, 0.8, 0.8]),
+                            .size(30)
+                            .color([0.8, 0.8, 0.8]),
+                    )
+                    .push(
+                        Text::new(format!("{}", self.debug_info))
+                            .size(20)
+                            .color([0.8, 0.8, 0.8]),
                     ),
             )
             .push(
