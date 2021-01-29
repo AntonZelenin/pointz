@@ -1,5 +1,5 @@
 use crate::buffer::Uniforms;
-use crate::drawer::model::ModelDrawer;
+use crate::drawer::model::{ModelDrawer, Object};
 use crate::model::{ModelVertex, Vertex};
 use crate::scene::GUI;
 use crate::texture::Texture;
@@ -28,7 +28,7 @@ macro_rules! declare_handle {
     )*};
 }
 
-declare_handle!(MeshHandle, MaterialHandle, ObjectHandle);
+declare_handle!(MeshHandle, MaterialHandle, ObjectHandle, InstanceHandle);
 
 pub struct ResourceRegistry<T> {
     mapping: HashMap<usize, T>,
@@ -164,11 +164,12 @@ impl RenderingState {
         }
     }
 
+    // todo I need to wrap evey call to drawer, improve
     pub fn add_model(
         &mut self,
         model: model::Model,
         instances: Vec<instance::Instance>,
-    ) -> ObjectHandle {
+    ) -> Object {
         self.model_drawer.add_model(
             model,
             instances,
@@ -176,6 +177,10 @@ impl RenderingState {
             &self.queue,
             &self.uniform_buffer,
         )
+    }
+
+    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &instance::Instance) {
+        self.model_drawer.update_instance(handle, instance_idx, instance, &self.queue);
     }
 
     pub fn render(&mut self, window: &Window) {

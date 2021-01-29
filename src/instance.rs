@@ -8,6 +8,7 @@ pub const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(
     NUM_ROWS as f32 * 0.5,
 );
 
+#[derive(Clone)]
 pub struct Instance {
     pub position: Vector3<f32>,
     pub rotation: Quaternion<f32>,

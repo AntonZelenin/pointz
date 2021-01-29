@@ -1,12 +1,12 @@
 use crate::camera::{Camera, CameraController, CursorWatcher, Projection};
-use crate::drawer::render::{ObjectHandle, RenderingState};
+use crate::drawer::render::RenderingState;
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::model::{Model, ModelBatch};
 use crate::texture::Texture;
 use crate::widgets::fps;
 use crate::{controls, drawer, event, model};
 use cgmath::prelude::*;
-use cgmath::{Deg, Point3, Quaternion, Vector3};
+use cgmath::{Deg, Point3, Quaternion, Vector3, Rad};
 use iced_wgpu::wgpu;
 use iced_wgpu::{Backend, Renderer, Settings};
 use iced_winit::winit::event_loop::EventLoop;
@@ -14,6 +14,7 @@ use iced_winit::winit::window::{Window, WindowBuilder};
 use iced_winit::{conversion, program, winit, Debug, Size};
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
+use crate::drawer::model::Object;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
@@ -148,7 +149,7 @@ pub struct App {
     pub resized: bool,
     pub rendering: RenderingState,
     pub camera_state: CameraState,
-    objects: Vec<ObjectHandle>,
+    objects: Vec<Object>,
 }
 
 impl App {
@@ -182,7 +183,7 @@ impl App {
         })
     }
 
-    fn add_models(&mut self) -> Vec<ObjectHandle> {
+    fn add_models(&mut self) -> Vec<Object> {
         let mut obj_models: Vec<Model> = Vec::new();
         for model_path in MODELS.iter() {
             obj_models.push(model::Model::load(model_path).unwrap());
@@ -219,14 +220,14 @@ impl App {
                 instances,
             });
         }
-        let mut object_handles: Vec<ObjectHandle> = vec![];
+        let mut objects: Vec<Object> = vec![];
         for model_batch in model_batches {
-            object_handles.push(
+            objects.push(
                 self.rendering
                     .add_model(model_batch.model, model_batch.instances),
             );
         }
-        object_handles
+        objects
     }
 
     pub fn resize(&mut self) {
@@ -262,23 +263,12 @@ impl App {
             bytemuck::cast_slice(&[self.rendering.uniforms]),
         );
 
-        // for model_batch in &mut self.scene.model_batches {
-        //     for instance in &mut model_batch.instances {
-        //         instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
-        //     }
-        //     todo move to rendering
-        // let instance_data = model_batch
-        //     .instances
-        //     .iter()
-        //     .map(Instance::to_raw)
-        //     .collect::<Vec<_>>();
-        // todo update in the ModelDrawer
-        // self.rendering.queue.write_buffer(
-        //     &model_data.instance_buffer,
-        //     0,
-        //     bytemuck::cast_slice(&instance_data),
-        // );
-        // }
+        for object in &mut self.objects {
+            for (idx, instance) in object.instances.iter_mut().enumerate() {
+                instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
+                self.rendering.update_instance(object.handle, idx, instance);
+            }
+        }
 
         self.rendering.gui.fps_meter.push(dt);
         self.rendering

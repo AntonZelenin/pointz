@@ -8,6 +8,13 @@ use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::RenderPass;
 use std::ops::Range;
 
+// todo use traits to remove deps?
+
+pub struct Object {
+    pub handle: ObjectHandle,
+    pub instances: Vec<instance::Instance>,
+}
+
 struct InternalMesh {
     handle: MeshHandle,
     count: usize,
@@ -16,11 +23,11 @@ struct InternalMesh {
 
 struct InternalObject {
     handle: ObjectHandle,
-    num_instances: usize,
+    instances: Vec<instance::Instance>,
     internal_meshes: Vec<InternalMesh>,
 }
 
-pub struct IndexDriver {
+struct IndexDriver {
     current_index: usize,
 }
 
@@ -44,6 +51,7 @@ pub struct ModelDrawer {
     uniform_bind_group_registry: ResourceRegistry<wgpu::BindGroup>,
     vertex_buffer_registry: ResourceRegistry<wgpu::Buffer>,
     index_buffer_registry: ResourceRegistry<wgpu::Buffer>,
+    instance_buffer_registry: ResourceRegistry<wgpu::Buffer>,
     uniform_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_group_layout: wgpu::BindGroupLayout,
 }
@@ -108,6 +116,7 @@ impl ModelDrawer {
             uniform_bind_group_registry: ResourceRegistry::new(),
             vertex_buffer_registry: ResourceRegistry::new(),
             index_buffer_registry: ResourceRegistry::new(),
+            instance_buffer_registry: ResourceRegistry::new(),
             uniform_bind_group_layout,
             texture_bind_group_layout,
         }
@@ -120,7 +129,7 @@ impl ModelDrawer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         uniform_buffer: &wgpu::Buffer,
-    ) -> ObjectHandle {
+    ) -> Object {
         let object_handle = ObjectHandle(self.index_driver.next_id());
         let mut internal_meshes: Vec<InternalMesh> = vec![];
         let material_ids = self.create_material_bind_groups(&model, &device, &queue);
@@ -137,17 +146,58 @@ impl ModelDrawer {
                 material_handle,
             });
         }
-        let num_instances = instances.len();
+        let instance_buffer = self.create_instance_buffer(&instances, device);
         self.uniform_bind_group_registry.insert(
             object_handle.0,
-            self.create_model_uniform_bind_group(instances, device, uniform_buffer),
+            self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer),
         );
+        self.instance_buffer_registry.insert(object_handle.0, instance_buffer);
         self.objects.push(InternalObject {
             handle: object_handle.clone(),
-            num_instances,
+            instances: instances.clone(),
             internal_meshes,
         });
-        object_handle
+        Object {
+            handle: object_handle,
+            instances,
+        }
+    }
+
+    fn create_instance_buffer(&mut self, instances: &Vec<instance::Instance>, device: &wgpu::Device) -> wgpu::Buffer {
+        let instance_data = instances
+            .iter()
+            .map(instance::Instance::to_raw)
+            .collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
+            label: Some("instance buffer"),
+        });
+        instance_buffer
+    }
+
+    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &instance::Instance, queue: &wgpu::Queue) {
+        let raw = vec![instance.to_raw()];
+        let bytes: &[u8] = bytemuck::cast_slice(&raw);
+        let offset = (instance_idx * bytes.len()) as u64;
+        queue.write_buffer(
+            self.instance_buffer_registry.get(handle.0),
+            offset,
+            bytes,
+        );
+    }
+
+    pub fn update(&mut self, object: Object, queue: &wgpu::Queue) {
+        // todo duplicate
+        let instance_data = object.instances
+            .iter()
+            .map(instance::Instance::to_raw)
+            .collect::<Vec<_>>();
+        queue.write_buffer(
+            self.instance_buffer_registry.get(object.handle.0),
+            0,
+            bytemuck::cast_slice(&instance_data),
+        );
     }
 
     /// Returns ordered material ids, meshes will take actual id by index using it's mesh.material_id
@@ -238,19 +288,10 @@ impl ModelDrawer {
 
     fn create_model_uniform_bind_group(
         &self,
-        instances: Vec<instance::Instance>,
+        instance_buffer: &wgpu::Buffer,
         device: &wgpu::Device,
         uniform_buffer: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
-        let instance_data = instances
-            .iter()
-            .map(instance::Instance::to_raw)
-            .collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
-            label: Some("instance buffer"),
-        });
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.uniform_bind_group_layout,
             entries: &[
@@ -391,7 +432,7 @@ impl render::Drawer for ModelDrawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
         for object in self.objects.iter() {
-            self.draw_model_instanced(render_pass, &object, &(0..object.num_instances as u32));
+            self.draw_model_instanced(render_pass, &object, &(0..object.instances.len() as u32));
         }
     }
 }
