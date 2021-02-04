@@ -57,7 +57,7 @@ pub struct ModelDrawer {
 }
 
 impl ModelDrawer {
-    pub fn build_model_drawer(device: &wgpu::Device) -> ModelDrawer {
+    pub fn new(device: &wgpu::Device) -> ModelDrawer {
         let uniform_bind_group_layout = <ModelDrawer>::create_uniform_bind_group_layout(device);
         let texture_bind_group_layout = <ModelDrawer>::create_texture_bind_group_layout(device);
         let light_bind_group_layout = <ModelDrawer>::create_light_bind_group_layout(device);

@@ -9,7 +9,7 @@ uniform Uniforms {
     vec3 u_view_position;
 };
 
-layout (location = 0) out vec4 outColor;
+layout(location=0) out vec4 outColor;
 
 float drawLine(vec2 p1, vec2 p2) {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
@@ -31,7 +31,7 @@ float drawLine(vec2 p1, vec2 p2) {
 void main()
 {
     vec3 start = vec3(0.1, 0.1, 0.1);
-    vec3 end = vec3(0.3, 0.3, 0.3);
+    vec3 end = vec3(100.3, 100.3, 100.3);
 
     //vec2 u_start = vec2(start.x / start.z, start.y / start.z);
     //vec2 u_end = vec2(end.x / end.z, end.y / end.z);

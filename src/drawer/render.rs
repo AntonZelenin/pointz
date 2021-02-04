@@ -13,6 +13,7 @@ use iced_winit::winit::window::Window;
 use std::collections::HashMap;
 use std::iter;
 use std::time::Instant;
+use crate::drawer::debug::DebugDrawer;
 
 #[macro_export]
 macro_rules! declare_handle {
@@ -66,7 +67,7 @@ pub struct RenderingState {
     pub uniform_buffer: wgpu::Buffer,
     pub last_render_time: Instant,
     model_drawer: ModelDrawer,
-    // debug_drawer: DebugDrawer,
+    debug_drawer: DebugDrawer,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -117,8 +118,8 @@ impl RenderingState {
             label: Some("uniform buffer"),
         });
 
-        let model_drawer = ModelDrawer::build_model_drawer(&device);
-        // let debug_drawer = render::build_debug_drawer(&device, &uniform_buffer);
+        let model_drawer = ModelDrawer::new(&device);
+        let debug_drawer = DebugDrawer::new(&device, &uniform_buffer);
         let viewport = iced_wgpu::Viewport::with_physical_size(
             iced::Size::new(size.width, size.height),
             scale_factor,
@@ -137,7 +138,7 @@ impl RenderingState {
             uniforms,
             uniform_buffer,
             model_drawer,
-            // debug_drawer,
+            debug_drawer,
             depth_texture_view,
         }
     }
@@ -207,8 +208,8 @@ impl RenderingState {
                     }),
                 }),
             });
-            self.model_drawer.draw(&mut render_pass);
-            // self.debug_drawer.draw(&mut render_pass, model_data);
+            // self.model_drawer.draw(&mut render_pass);
+            self.debug_drawer.draw(&mut render_pass);
         }
 
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
