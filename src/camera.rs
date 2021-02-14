@@ -32,7 +32,7 @@ impl Camera {
         }
     }
 
-    pub fn calc_matrix(&self) -> Matrix4<f32> {
+    pub fn calc_view_matrix(&self) -> Matrix4<f32> {
         // todo it cannot look too high or too low
         Matrix4::look_to_rh(
             self.position,

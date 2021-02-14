@@ -1,6 +1,6 @@
 use crate::buffer::Uniforms;
 use crate::drawer::model::{ModelDrawer, Object};
-use crate::model::{ModelVertex, Vertex};
+use crate::model::{ModelVertex, Vertex, SimpleVertex};
 use crate::scene::GUI;
 use crate::texture::Texture;
 use crate::{drawer, instance, model, texture};
@@ -208,7 +208,7 @@ impl RenderingState {
                     }),
                 }),
             });
-            // self.model_drawer.draw(&mut render_pass);
+            self.model_drawer.draw(&mut render_pass);
             self.debug_drawer.draw(&mut render_pass);
         }
 
@@ -227,6 +227,10 @@ impl RenderingState {
         // todo event to remove window from here?
         window.set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
         self.queue.submit(iter::once(encoder.finish()));
+    }
+
+    pub fn add_line(&mut self, start: SimpleVertex, end: SimpleVertex) {
+        self.debug_drawer.add_line(start, end, &self.queue);
     }
 }
 
