@@ -208,9 +208,6 @@ impl App {
     }
 
     pub fn process_left_click(&mut self) {
-        let proj = self.camera_state.projection.calc_matrix();
-        let view = self.camera_state.camera.calc_view_matrix();
-
         let nd_click_coords = self.get_normalized_click_coords();
         let mut start = self.rendering.uniforms.view_proj.invert().unwrap() * nd_click_coords;
         start.x /= start.w;
@@ -218,14 +215,12 @@ impl App {
         start.z /= start.w;
 
         let ray_clip = Vector4::new(nd_click_coords.x, nd_click_coords.y, -1.0, 1.0);
-        let mut ray_eye = proj.invert().unwrap() * ray_clip;
+        let mut ray_eye = self.camera_state.projection.calc_matrix().invert().unwrap() * ray_clip;
         ray_eye.z = -1.0;
         ray_eye.w = 0.0;
-        let ray_world = (view.invert().unwrap() * ray_eye).normalize();
+        let ray_world = (self.camera_state.camera.calc_view_matrix().invert().unwrap() * ray_eye).normalize();
 
-        let z_end = self.camera_state.projection.zfar;
-        let x_end = start.x + (ray_world.x * (z_end - start.z)) / ray_world.z;
-        let y_end = start.y + (ray_world.y * (z_end - start.z)) / ray_world.z;
+        let end = start + self.camera_state.projection.zfar * ray_world;
 
         self.rendering.add_line(
             SimpleVertex {
@@ -237,9 +232,9 @@ impl App {
             },
             SimpleVertex {
                 position: [
-                    x_end,
-                    y_end,
-                    z_end,
+                    end.x,
+                    end.y,
+                    end.z,
                 ],
             }
         );
