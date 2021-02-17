@@ -26,7 +26,6 @@ impl Texture {
 
     pub fn from_image(img: &image::DynamicImage, label: &str, is_normal_map: bool) -> Result<Self> {
         let dimensions = img.dimensions();
-        // todo it might break something, delete todo if all is working
         // todo I can store rgba_image in a Texture
         let rgba_image = img.to_rgba8();
         let type_ = if is_normal_map {

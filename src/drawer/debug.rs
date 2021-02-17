@@ -18,8 +18,9 @@ impl DebugDrawer {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX,
-                    ty: wgpu::BindingType::UniformBuffer {
-                        dynamic: false,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
@@ -30,7 +31,11 @@ impl DebugDrawer {
             layout: &debug_uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
+                resource: wgpu::BindingResource::Buffer {
+                    buffer: &uniform_buffer,
+                    offset: 0,
+                    size: None,
+                },
             }],
             label: Some("debug_uniform_bind_group"),
         });
@@ -41,9 +46,9 @@ impl DebugDrawer {
                 push_constant_ranges: &[],
             });
             let vs_module =
-                device.create_shader_module(wgpu::include_spirv!("../shader/spv/line.vert.spv"));
+                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/line.vert.spv"));
             let fs_module =
-                device.create_shader_module(wgpu::include_spirv!("../shader/spv/line.frag.spv"));
+                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/line.frag.spv"));
             build_render_pipeline(device, &layout, vs_module, fs_module)
         };
         let vertex_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -88,42 +93,40 @@ pub fn build_render_pipeline(
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("main"),
         layout: Some(render_pipeline_layout),
-        vertex_stage: wgpu::ProgrammableStageDescriptor {
+        vertex: wgpu::VertexState {
             module: &vs_module,
             entry_point: "main",
+            buffers: &[SimpleVertex::desc()],
         },
-        fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+        fragment: Some(wgpu::FragmentState {
             module: &fs_module,
             entry_point: "main",
+            targets: &[wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                color_blend: wgpu::BlendState::REPLACE,
+                alpha_blend: wgpu::BlendState::REPLACE,
+                write_mask: wgpu::ColorWrite::ALL,
+            }]
         }),
-        rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::LineList,
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: wgpu::CullMode::Back,
-            depth_bias: 0,
-            depth_bias_slope_scale: 0.0,
-            depth_bias_clamp: 0.0,
-            clamp_depth: false,
-        }),
-        primitive_topology: wgpu::PrimitiveTopology::LineList,
-        color_states: &[wgpu::ColorStateDescriptor {
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
-            color_blend: wgpu::BlendDescriptor::REPLACE,
-            alpha_blend: wgpu::BlendDescriptor::REPLACE,
-            write_mask: wgpu::ColorWrite::ALL,
-        }],
-        depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+            strip_index_format: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
             format: texture::DEPTH_FORMAT,
             depth_write_enabled: true,
             depth_compare: wgpu::CompareFunction::Less,
-            stencil: wgpu::StencilStateDescriptor::default(),
+            stencil: wgpu::StencilState::default(),
+            bias: Default::default(),
+            clamp_depth: false
         }),
-        vertex_state: wgpu::VertexStateDescriptor {
-            // todo why 16
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[SimpleVertex::desc()],
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
         },
-        sample_count: 1,
-        sample_mask: !0,
-        alpha_to_coverage_enabled: false,
     })
 }

@@ -73,9 +73,9 @@ impl ModelDrawer {
                     push_constant_ranges: &[],
                 });
             let vs_module =
-                device.create_shader_module(wgpu::include_spirv!("../shader/spv/shader.vert.spv"));
+                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.vert.spv"));
             let fs_module =
-                device.create_shader_module(wgpu::include_spirv!("../shader/spv/shader.frag.spv"));
+                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.frag.spv"));
             render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
         };
         // todo light seems like it needs to be moved to a different drawer (¬_¬)
@@ -90,7 +90,11 @@ impl ModelDrawer {
             layout: &light_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(light_buffer.slice(..)),
+                resource: wgpu::BindingResource::Buffer {
+                    buffer: &light_buffer,
+                    offset: 0,
+                    size: None,
+                }
             }],
             label: None,
         });
@@ -297,11 +301,19 @@ impl ModelDrawer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
+                    resource: wgpu::BindingResource::Buffer{
+                        buffer: uniform_buffer,
+                        offset: 0,
+                        size: None,
+                    },
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Buffer(instance_buffer.slice(..)),
+                    resource: wgpu::BindingResource::Buffer{
+                        buffer: instance_buffer,
+                        offset: 0,
+                        size: None,
+                    },
                 },
             ],
             label: Some("uniform_bind_group"),
@@ -314,8 +326,9 @@ impl ModelDrawer {
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::UniformBuffer {
-                        dynamic: false,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
@@ -323,9 +336,11 @@ impl ModelDrawer {
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStage::VERTEX,
-                    ty: wgpu::BindingType::StorageBuffer {
-                        dynamic: false,
-                        readonly: true,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage {
+                            read_only: true,
+                        },
+                        has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
@@ -341,34 +356,44 @@ impl ModelDrawer {
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::SampledTexture {
+                    ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        component_type: wgpu::TextureComponentType::Float,
-                        dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float {
+                            filterable: false,
+                        },
+                        view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler { comparison: false },
+                    ty: wgpu::BindingType::Sampler {
+                        comparison: false,
+                        filtering: false,
+                    },
                     count: None,
                 },
                 // normal map
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::SampledTexture {
+                    ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        component_type: wgpu::TextureComponentType::Float,
-                        dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float {
+                            filterable: false,
+                        },
+                        view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler { comparison: false },
+                    ty: wgpu::BindingType::Sampler {
+                        comparison: false,
+                        filtering: false,
+                    },
                     count: None,
                 },
             ],
@@ -381,8 +406,9 @@ impl ModelDrawer {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                ty: wgpu::BindingType::UniformBuffer {
-                    dynamic: false,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
                     min_binding_size: None,
                 },
                 count: None,
@@ -420,7 +446,7 @@ impl ModelDrawer {
             .material_bind_group_registry
             .get(mesh.material_handle.0);
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        render_pass.set_index_buffer(index_buffer.slice(..));
+        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, uniform_bind_group, &[]);
         render_pass.set_bind_group(1, material_bind_group, &[]);
         render_pass.set_bind_group(2, &self.light_bind_group, &[]);
@@ -498,7 +524,7 @@ pub fn create_depth_view(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: texture::DEPTH_FORMAT,
-        usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT
+        usage: wgpu::TextureUsage::RENDER_ATTACHMENT
             | wgpu::TextureUsage::SAMPLED
             | wgpu::TextureUsage::COPY_SRC,
     });
