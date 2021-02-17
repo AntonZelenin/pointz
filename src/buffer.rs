@@ -5,7 +5,7 @@ use cgmath::Matrix4;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct Uniforms {
-    view_proj: Matrix4<f32>,
+    pub view_proj: Matrix4<f32>,
     view_position: cgmath::Vector4<f32>,
 }
 
@@ -21,7 +21,7 @@ impl Uniforms {
     }
 
     pub fn update_view_proj(&mut self, camera: &Camera, projection: &Projection) {
-        self.view_proj = projection.calc_matrix() * camera.calc_matrix();
+        self.view_proj = projection.calc_matrix() * camera.calc_view_matrix();
         // We don't specifically need homogeneous coordinates since we're just using
         // a vec3 in the shader. We're using Point3 for the camera.eye, and this is
         // the easiest way to convert to Vector4. We're using Vector4 because of

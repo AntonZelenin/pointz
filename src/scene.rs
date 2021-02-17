@@ -1,12 +1,12 @@
 use crate::camera::{Camera, CameraController, CursorWatcher, Projection};
 use crate::drawer::render::RenderingState;
 use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
-use crate::model::{Model, ModelBatch};
+use crate::model::{Model, ModelBatch, SimpleVertex};
 use crate::texture::Texture;
 use crate::widgets::fps;
 use crate::{controls, drawer, event, model};
 use cgmath::prelude::*;
-use cgmath::{Deg, Point3, Quaternion, Vector3, Rad};
+use cgmath::{Deg, Point3, Quaternion, Vector3, Rad, Vector4};
 use iced_wgpu::wgpu;
 use iced_wgpu::{Backend, Renderer, Settings};
 use iced_winit::winit::event_loop::EventLoop;
@@ -15,6 +15,7 @@ use iced_winit::{conversion, program, winit, Debug, Size};
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
 use crate::drawer::model::Object;
+use crate::controls::Message;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
@@ -58,7 +59,7 @@ pub struct CameraState {
 
 impl CameraState {
     pub fn new(width: u32, height: u32) -> CameraState {
-        let camera = Camera::new(Point3::new(-30.0, 25.0, 25.0), Deg(0.0), Deg(-40.0));
+        let camera = Camera::new(Point3::new(10.0, 0.0, -25.0), Deg(90.0), Deg(0.0));
         let camera_controller = CameraController::new(4.0, 0.4);
         let projection = Projection::new(width, height, Deg(50.0), 0.1, 1000.0);
         CameraState {
@@ -70,79 +71,6 @@ impl CameraState {
         }
     }
 }
-
-// impl Scene {
-//     pub fn new(
-//         device: &wgpu::Device,
-//         queue: &wgpu::Queue,
-//         texture_bind_group_layout: &wgpu::BindGroupLayout,
-//         uniform_bind_group_layout: &wgpu::BindGroupLayout,
-//         uniform_buffer: &wgpu::Buffer,
-//     ) -> Scene {
-//         let mut obj_models: Vec<Model> = Vec::new();
-//         for model_path in MODELS.iter() {
-//             obj_models.push(
-//                 model::Model::load(device, queue, texture_bind_group_layout, model_path).unwrap(),
-//             );
-//         }
-//         let mut models: Vec<ModelData> = Vec::new();
-//         let mut i: i32 = -1;
-//         for obj_model in obj_models {
-//             i += 1;
-//             let instances = (0..NUM_ROWS)
-//                 .flat_map(|z| {
-//                     (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-//                         let position = Vector3 {
-//                             x: (x * 6) as f32,
-//                             y: 0.0,
-//                             // * i * 30 just to move the second model next to the first model to showcase
-//                             z: (z * 6 + i as u32 * 30) as f32,
-//                         } - INSTANCE_DISPLACEMENT;
-//                         let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0));
-//                         // let rotation = if position.is_zero() {
-//                         //     this is needed so an object at (0, 0, 0) won't get scaled to zero
-//                         //     as Quaternions can effect scale if they're not created correctly
-//                         //     Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
-//                         // } else {
-//                         //     Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
-//                         // };
-//
-//                         Instance { position, rotation }
-//                     })
-//                 })
-//                 .collect::<Vec<_>>();
-//
-//             // let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-//             // let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-//             //     contents: bytemuck::cast_slice(&instance_data),
-//             //     usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
-//             //     label: Some("instance buffer"),
-//             // });
-//             // let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-//             //     layout: uniform_bind_group_layout,
-//             //     entries: &[
-//             //         wgpu::BindGroupEntry {
-//             //             binding: 0,
-//             //             resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..)),
-//             //         },
-//             //         wgpu::BindGroupEntry {
-//             //             binding: 1,
-//             //             resource: wgpu::BindingResource::Buffer(instance_buffer.slice(..)),
-//             //         },
-//             //     ],
-//             //     label: Some("uniform_bind_group"),
-//             // });
-//
-//             models.push(ModelData {
-//                 model: obj_model,
-//                 instances,
-//                 // instance_buffer,
-//                 // uniform_bind_group,
-//             });
-//         }
-//         Scene { model_data: models }
-//     }
-// }
 
 pub struct App {
     pub window: Window,
@@ -280,57 +208,52 @@ impl App {
     }
 
     pub fn process_left_click(&mut self) {
-        // let click_coords = self.get_normalized_opengl_coords();
-        // let clip_coords = Vector4::new(click_coords.x, click_coords.y, -1.0, 1.0);
-        // // y is deviated by 2 for some reason
-        // let click_world_coords =
-        //     self.camera_state.camera.calc_matrix().invert().unwrap() * clip_coords;
-        // let mut eye_coords =
-        //     self.camera_state.projection.calc_matrix().invert().unwrap() * clip_coords;
-        // eye_coords = Vector4::new(eye_coords.x, eye_coords.y, -1.0, 0.0);
-        // let ray_world =
-        //     (self.camera_state.camera.calc_matrix().invert().unwrap() * eye_coords).normalize();
-        // let vec_start = SimpleVertex {
-        //     position: [
-        //         click_world_coords.x,
-        //         click_world_coords.y,
-        //         click_world_coords.z,
-        //     ],
-        // };
-        // let vec_end = SimpleVertex {
-        //     position: [
-        //         ray_world.x * self.camera_state.projection.zfar,
-        //         ray_world.y * self.camera_state.projection.zfar,
-        //         ray_world.z * self.camera_state.projection.zfar,
-        //     ],
-        // };
-        // self.rendering.debug_buff =
-        //     self.rendering
-        //         .device
-        //         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        //             label: Some("Vertex Buffer"),
-        //             contents: bytemuck::cast_slice(&[vec_start, vec_end]),
-        //             usage: wgpu::BufferUsage::VERTEX,
-        //         });
+        let nd_click_coords = self.get_normalized_click_coords();
+        let mut start = self.rendering.uniforms.view_proj.invert().unwrap() * nd_click_coords;
+        start.x /= start.w;
+        start.y /= start.w;
+        start.z /= start.w;
 
-        // self.program_state.queue_message(Message::DebugInfo(
-        //     format!(
-        //         "x {}, y {}, z {}\n",
-        //         click_world_coords.x, click_world_coords.y, click_world_coords.z
-        //     ) + &format!(
-        //         "x {}, y {}, z {}",
-        //         self.camera.position.x, self.camera.position.y, self.camera.position.z
-        //     ),
-        // ));
+        let ray_clip = Vector4::new(nd_click_coords.x, nd_click_coords.y, -1.0, 1.0);
+        let mut ray_eye = self.camera_state.projection.calc_matrix().invert().unwrap() * ray_clip;
+        ray_eye.z = -1.0;
+        ray_eye.w = 0.0;
+        let ray_world = (self.camera_state.camera.calc_view_matrix().invert().unwrap() * ray_eye).normalize();
+
+        let end = start + self.camera_state.projection.zfar * ray_world;
+
+        self.rendering.add_line(
+            SimpleVertex {
+                position: [
+                    start.x,
+                    start.y,
+                    start.z
+                ],
+            },
+            SimpleVertex {
+                position: [
+                    end.x,
+                    end.y,
+                    end.z,
+                ],
+            }
+        );
+        self.rendering.gui.program_state.queue_message(Message::DebugInfo(
+            format!(
+                "camera x {}, camera y {}, camera z {}",
+                self.camera_state.camera.position[0], self.camera_state.camera.position[1], self.camera_state.camera.position[2]
+            ),
+        ));
     }
 
-    // fn get_normalized_opengl_coords(&self) -> Vector2<f32> {
-    //     // convert mouse position to opengl coords
-    //     Vector2::new(
-    //         (2.0 * self.gui.cursor_position.x as f32) / self.rendering.sc_desc.width as f32 - 1.0,
-    //         -(2.0 * self.gui.cursor_position.y as f32) / self.rendering.sc_desc.height as f32 - 1.0,
-    //     )
-    // }
+    fn get_normalized_click_coords(&self) -> Vector4<f32> {
+        Vector4::new(
+            (2.0 * self.rendering.gui.cursor_position.x as f32) / self.rendering.sc_desc.width as f32 - 1.0,
+             1.0 - (2.0 * self.rendering.gui.cursor_position.y as f32) / self.rendering.sc_desc.height as f32,
+            0.0,
+            1.0
+        )
+    }
 
     pub fn render(&mut self) {
         self.rendering.render(&self.window);
