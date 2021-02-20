@@ -1,4 +1,4 @@
-use crate::instance::Instance;
+use crate::object::Instance;
 use crate::texture;
 use anyhow::*;
 use iced_wgpu::wgpu;

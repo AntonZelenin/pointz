@@ -1,9 +1,9 @@
 use crate::buffer::Uniforms;
-use crate::drawer::model::{ModelDrawer, Object};
+use crate::drawer::model::ModelDrawer;
 use crate::model::{ModelVertex, Vertex, SimpleVertex};
 use crate::scene::GUI;
 use crate::texture::Texture;
-use crate::{drawer, instance, model, texture};
+use crate::{drawer, object, model, texture};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::iter;
 use std::time::Instant;
 use crate::drawer::debug::DebugDrawer;
+use iced::Application;
 
 #[macro_export]
 macro_rules! declare_handle {
@@ -146,11 +147,11 @@ impl RenderingState {
     // todo I need to wrap evey call to drawer, improve
     pub fn add_model(
         &mut self,
-        model: model::Model,
-        instances: Vec<instance::Instance>,
-    ) -> Object {
+        model: &model::Model,
+        instances: &Vec<object::Instance>,
+    ) -> ObjectHandle {
         self.model_drawer.add_model(
-            model,
+            &model,
             instances,
             &self.device,
             &self.queue,
@@ -158,7 +159,9 @@ impl RenderingState {
         )
     }
 
-    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &instance::Instance) {
+    // todo add update all method?
+
+    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &object::Instance) {
         self.model_drawer.update_instance(handle, instance_idx, instance, &self.queue);
     }
 

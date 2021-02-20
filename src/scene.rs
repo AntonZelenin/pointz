@@ -1,12 +1,11 @@
-use crate::camera::{Camera, CameraController, CursorWatcher, Projection};
 use crate::drawer::render::RenderingState;
-use crate::instance::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
+use crate::object::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS, Object};
 use crate::model::{Model, ModelBatch, SimpleVertex};
 use crate::texture::Texture;
 use crate::widgets::fps;
 use crate::{controls, drawer, event, model};
 use cgmath::prelude::*;
-use cgmath::{Deg, Point3, Quaternion, Vector3, Rad, Vector4};
+use cgmath::{Deg, Quaternion, Vector3, Rad, Vector4};
 use iced_wgpu::wgpu;
 use iced_wgpu::{Backend, Renderer, Settings};
 use iced_winit::winit::event_loop::EventLoop;
@@ -16,6 +15,8 @@ use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
 use crate::drawer::model::Object;
 use crate::controls::Message;
+use legion::*;
+use crate::camera::CameraState;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
@@ -49,35 +50,13 @@ impl GUI {
     }
 }
 
-pub struct CameraState {
-    camera: Camera,
-    pub camera_controller: CameraController,
-    pub camera_mode: bool,
-    projection: Projection,
-    pub cursor_watcher: CursorWatcher,
-}
-
-impl CameraState {
-    pub fn new(width: u32, height: u32) -> CameraState {
-        let camera = Camera::new(Point3::new(10.0, 0.0, -25.0), Deg(90.0), Deg(0.0));
-        let camera_controller = CameraController::new(4.0, 0.4);
-        let projection = Projection::new(width, height, Deg(50.0), 0.1, 1000.0);
-        CameraState {
-            camera,
-            camera_controller,
-            camera_mode: false,
-            projection,
-            cursor_watcher: CursorWatcher::new(),
-        }
-    }
-}
-
 pub struct App {
     pub window: Window,
     pub resized: bool,
     pub rendering: RenderingState,
     pub camera_state: CameraState,
     objects: Vec<Object>,
+    world: World,
 }
 
 impl App {
@@ -97,12 +76,17 @@ impl App {
             window.scale_factor(),
         );
         let camera_state = CameraState::new(rendering.sc_desc.width, rendering.sc_desc.height);
+        // world.push((position,));
+        // if let Some(mut entry) = world.entry(object.components[0]) {
+        //     let position = entry.into_component::<Position>();
+        // }
         let mut app = App {
             window,
             rendering,
             camera_state,
             objects: Vec::new(),
             resized: false,
+            world: World::default(),
         };
         app.objects = app.add_models();
 
@@ -150,10 +134,9 @@ impl App {
         }
         let mut objects: Vec<Object> = vec![];
         for model_batch in model_batches {
-            objects.push(
-                self.rendering
-                    .add_model(model_batch.model, model_batch.instances),
-            );
+            let object_handle = self.rendering.add_model(model_batch.model, model_batch.instances);
+
+            objects.push(object);
         }
         objects
     }

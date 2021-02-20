@@ -2,10 +2,9 @@ extern crate log;
 
 mod buffer;
 mod camera;
-mod controls;
 mod drawer;
 mod event;
-mod instance;
+mod object;
 mod lighting;
 mod model;
 mod primitives;
@@ -13,6 +12,7 @@ mod scene;
 mod shader;
 mod texture;
 mod widgets;
+mod editor;
 
 use scene::App;
 

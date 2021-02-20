@@ -2,18 +2,12 @@ use crate::drawer::render;
 use crate::drawer::render::{MaterialHandle, MeshHandle, ObjectHandle, ResourceRegistry};
 use crate::lighting::Light;
 use crate::texture::TextureType;
-use crate::{instance, model, texture};
+use crate::{object, model, texture};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::RenderPass;
 use std::ops::Range;
-
-// todo use traits to remove deps?
-
-pub struct Object {
-    pub handle: ObjectHandle,
-    pub instances: Vec<instance::Instance>,
-}
+use crate::object::Object;
 
 struct InternalMesh {
     handle: MeshHandle,
@@ -23,7 +17,7 @@ struct InternalMesh {
 
 struct InternalObject {
     handle: ObjectHandle,
-    instances: Vec<instance::Instance>,
+    instances: Vec<object::Instance>,
     internal_meshes: Vec<InternalMesh>,
 }
 
@@ -128,15 +122,15 @@ impl ModelDrawer {
 
     pub fn add_model(
         &mut self,
-        model: model::Model,
-        instances: Vec<instance::Instance>,
+        model: &model::Model,
+        instances: &Vec<object::Instance>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         uniform_buffer: &wgpu::Buffer,
-    ) -> Object {
+    ) -> ObjectHandle {
         let object_handle = ObjectHandle(self.index_driver.next_id());
         let mut internal_meshes: Vec<InternalMesh> = vec![];
-        let material_ids = self.create_material_bind_groups(&model, &device, &queue);
+        let material_ids = self.create_material_bind_groups(model, &device, &queue);
         for mesh in model.meshes.iter() {
             let mesh_handle = MeshHandle(self.index_driver.next_id());
             self.index_buffer_registry
@@ -150,7 +144,7 @@ impl ModelDrawer {
                 material_handle,
             });
         }
-        let instance_buffer = self.create_instance_buffer(&instances, device);
+        let instance_buffer = self.create_instance_buffer(instances, device);
         self.uniform_bind_group_registry.insert(
             object_handle.0,
             self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer),
@@ -161,16 +155,13 @@ impl ModelDrawer {
             instances: instances.clone(),
             internal_meshes,
         });
-        Object {
-            handle: object_handle,
-            instances,
-        }
+        object_handle
     }
 
-    fn create_instance_buffer(&mut self, instances: &Vec<instance::Instance>, device: &wgpu::Device) -> wgpu::Buffer {
+    fn create_instance_buffer(&mut self, instances: &Vec<object::Instance>, device: &wgpu::Device) -> wgpu::Buffer {
         let instance_data = instances
             .iter()
-            .map(instance::Instance::to_raw)
+            .map(object::Instance::to_raw)
             .collect::<Vec<_>>();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&instance_data),
@@ -180,27 +171,13 @@ impl ModelDrawer {
         instance_buffer
     }
 
-    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &instance::Instance, queue: &wgpu::Queue) {
-        let raw = vec![instance.to_raw()];
-        let bytes: &[u8] = bytemuck::cast_slice(&raw);
+    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &object::Instance, queue: &wgpu::Queue) {
+        let bytes: &[u8] = bytemuck::cast_slice(&vec![instance.to_raw()]);
         let offset = (instance_idx * bytes.len()) as u64;
         queue.write_buffer(
             self.instance_buffer_registry.get(handle.0),
             offset,
             bytes,
-        );
-    }
-
-    pub fn update(&mut self, object: Object, queue: &wgpu::Queue) {
-        // todo duplicate
-        let instance_data = object.instances
-            .iter()
-            .map(instance::Instance::to_raw)
-            .collect::<Vec<_>>();
-        queue.write_buffer(
-            self.instance_buffer_registry.get(object.handle.0),
-            0,
-            bytemuck::cast_slice(&instance_data),
         );
     }
 
