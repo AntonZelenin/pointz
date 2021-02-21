@@ -2,12 +2,11 @@ use crate::drawer::render;
 use crate::drawer::render::{MaterialHandle, MeshHandle, ObjectHandle, ResourceRegistry};
 use crate::lighting::Light;
 use crate::texture::TextureType;
-use crate::{object, model, texture};
+use crate::{model, object, texture};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::RenderPass;
 use std::ops::Range;
-use crate::object::Object;
 
 struct InternalMesh {
     handle: MeshHandle,
@@ -88,7 +87,7 @@ impl ModelDrawer {
                     buffer: &light_buffer,
                     offset: 0,
                     size: None,
-                }
+                },
             }],
             label: None,
         });
@@ -149,7 +148,8 @@ impl ModelDrawer {
             object_handle.0,
             self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer),
         );
-        self.instance_buffer_registry.insert(object_handle.0, instance_buffer);
+        self.instance_buffer_registry
+            .insert(object_handle.0, instance_buffer);
         self.objects.push(InternalObject {
             handle: object_handle.clone(),
             instances: instances.clone(),
@@ -158,7 +158,11 @@ impl ModelDrawer {
         object_handle
     }
 
-    fn create_instance_buffer(&mut self, instances: &Vec<object::Instance>, device: &wgpu::Device) -> wgpu::Buffer {
+    fn create_instance_buffer(
+        &mut self,
+        instances: &Vec<object::Instance>,
+        device: &wgpu::Device,
+    ) -> wgpu::Buffer {
         let instance_data = instances
             .iter()
             .map(object::Instance::to_raw)
@@ -171,11 +175,12 @@ impl ModelDrawer {
         instance_buffer
     }
 
-    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &object::Instance, queue: &wgpu::Queue) {
-        let bytes: &[u8] = bytemuck::cast_slice(&vec![instance.to_raw()]);
-        let offset = (instance_idx * bytes.len()) as u64;
+    pub fn update_object(&mut self, object: &object::Object, queue: &wgpu::Queue) {
+        let raw = vec![object.to_raw_instance()];
+        let bytes: &[u8] = bytemuck::cast_slice(&raw);
+        let offset = (object.instance_index * bytes.len()) as u64;
         queue.write_buffer(
-            self.instance_buffer_registry.get(handle.0),
+            self.instance_buffer_registry.get(object.handle.0),
             offset,
             bytes,
         );
@@ -278,7 +283,7 @@ impl ModelDrawer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer{
+                    resource: wgpu::BindingResource::Buffer {
                         buffer: uniform_buffer,
                         offset: 0,
                         size: None,
@@ -286,7 +291,7 @@ impl ModelDrawer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Buffer{
+                    resource: wgpu::BindingResource::Buffer {
                         buffer: instance_buffer,
                         offset: 0,
                         size: None,
@@ -314,9 +319,7 @@ impl ModelDrawer {
                     binding: 1,
                     visibility: wgpu::ShaderStage::VERTEX,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage {
-                            read_only: true,
-                        },
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -335,9 +338,7 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float {
-                            filterable: false,
-                        },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
@@ -357,9 +358,7 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float {
-                            filterable: false,
-                        },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,

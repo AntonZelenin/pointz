@@ -31,11 +31,6 @@ impl Vertex for SimpleVertex {
     }
 }
 
-pub struct ModelBatch {
-    pub model: Model,
-    pub instances: Vec<Instance>,
-}
-
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
@@ -172,7 +167,7 @@ pub struct Mesh {
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct ModelVertex {
-    position: cgmath::Vector3<f32>,
+    pub position: cgmath::Vector3<f32>,
     tex_coords: cgmath::Vector2<f32>,
     normal: cgmath::Vector3<f32>,
     tangent: cgmath::Vector3<f32>,

@@ -1,28 +1,29 @@
+use crate::camera::CameraState;
 use crate::drawer::render::RenderingState;
-use crate::object::{Instance, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS, Object};
-use crate::model::{Model, ModelBatch, SimpleVertex};
+use crate::model::{Model, SimpleVertex};
+use crate::object::{Instance, Object, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::texture::Texture;
 use crate::widgets::fps;
-use crate::{controls, drawer, event, model};
+use crate::{drawer, editor, event, model};
 use cgmath::prelude::*;
-use cgmath::{Deg, Quaternion, Vector3, Rad, Vector4};
+use cgmath::{Deg, Quaternion, Rad, Vector3, Vector4};
+use glam::Vec3;
 use iced_wgpu::wgpu;
 use iced_wgpu::{Backend, Renderer, Settings};
 use iced_winit::winit::event_loop::EventLoop;
 use iced_winit::winit::window::{Window, WindowBuilder};
 use iced_winit::{conversion, program, winit, Debug, Size};
+use legion;
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
-use crate::drawer::model::Object;
-use crate::controls::Message;
-use legion::*;
-use crate::camera::CameraState;
+use cgmath::num_traits::Pow;
+use ordered_float::OrderedFloat;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
 pub struct GUI {
     pub renderer: Renderer,
-    pub program_state: program::State<controls::GUI>,
+    pub program_state: program::State<editor::GUI>,
     // todo keep a list of widgets, come up with a normal design
     fps_meter: fps::Meter,
     pub cursor_position: PhysicalPosition<f64>,
@@ -34,7 +35,7 @@ impl GUI {
         let mut renderer = iced_wgpu::Renderer::new(Backend::new(device, Settings::default()));
         let mut debug = Debug::new();
         let program_state = program::State::new(
-            controls::GUI::new(),
+            editor::GUI::new(),
             Size::new(size.width as f32, size.height as f32),
             conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), scale_factor),
             &mut renderer,
@@ -55,8 +56,12 @@ pub struct App {
     pub resized: bool,
     pub rendering: RenderingState,
     pub camera_state: CameraState,
+    pub world: World,
+}
+
+pub struct World {
     objects: Vec<Object>,
-    world: World,
+    entities: legion::World,
 }
 
 impl App {
@@ -84,29 +89,31 @@ impl App {
             window,
             rendering,
             camera_state,
-            objects: Vec::new(),
             resized: false,
-            world: World::default(),
+            world: World {
+                objects: Vec::new(),
+                entities: legion::World::default(),
+            },
         };
-        app.objects = app.add_models();
+        app.load_models();
 
         event_loop.run(move |event, _, control_flow| {
             event::processor::process_events(&mut app, &event, control_flow)
         })
     }
 
-    fn add_models(&mut self) -> Vec<Object> {
+    fn load_models(&mut self) {
         let mut obj_models: Vec<Model> = Vec::new();
         for model_path in MODELS.iter() {
             obj_models.push(model::Model::load(model_path).unwrap());
         }
-        let mut model_batches: Vec<ModelBatch> = Vec::new();
+        let mut objects: Vec<Object> = vec![];
         let mut i: i32 = -1;
-        for obj_model in obj_models {
+        for model in obj_models {
             i += 1;
-            let instances = (0..NUM_ROWS)
-                .flat_map(|z| {
-                    (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+            for z in 0..NUM_ROWS {
+                let instances = (0..NUM_INSTANCES_PER_ROW)
+                    .map(move |x| {
                         let position = Vector3 {
                             x: (x * 6) as f32,
                             y: 0.0,
@@ -124,21 +131,31 @@ impl App {
 
                         Instance { position, rotation }
                     })
-                })
-                .collect::<Vec<_>>();
-
-            model_batches.push(ModelBatch {
-                model: obj_model,
-                instances,
-            });
+                    .collect();
+                let object_handle = self.rendering.add_model(&model, &instances);
+                for (idx, instance) in instances.iter().enumerate() {
+                    let mut object = Object {
+                        handle: object_handle,
+                        instance_index: idx,
+                        position: instance.position,
+                        rotation: instance.rotation,
+                        components: vec![],
+                    };
+                    object
+                        .components
+                        .push(self.world.entities.push((physics::BoundingSphere {
+                            center: Vec3::new(
+                                instance.position.x,
+                                instance.position.y,
+                                instance.position.z,
+                            ),
+                            radius: calc_bounding_sphere_radius(&model),
+                        },)));
+                    objects.push(object);
+                }
+            }
         }
-        let mut objects: Vec<Object> = vec![];
-        for model_batch in model_batches {
-            let object_handle = self.rendering.add_model(model_batch.model, model_batch.instances);
-
-            objects.push(object);
-        }
-        objects
+        self.world.objects = objects;
     }
 
     pub fn resize(&mut self) {
@@ -174,18 +191,16 @@ impl App {
             bytemuck::cast_slice(&[self.rendering.uniforms]),
         );
 
-        for object in &mut self.objects {
-            for (idx, instance) in object.instances.iter_mut().enumerate() {
-                instance.rotation = Quaternion::from_angle_y(Rad(0.03)) * instance.rotation;
-                self.rendering.update_instance(object.handle, idx, instance);
-            }
+        for object in &mut self.world.objects.iter_mut() {
+            object.rotation = Quaternion::from_angle_y(Rad(0.03)) * object.rotation;
+            self.rendering.update_object(object);
         }
 
         self.rendering.gui.fps_meter.push(dt);
         self.rendering
             .gui
             .program_state
-            .queue_message(controls::Message::UpdateFps(
+            .queue_message(editor::Message::UpdateFps(
                 self.rendering.gui.fps_meter.get_average(),
             ));
     }
@@ -201,44 +216,61 @@ impl App {
         let mut ray_eye = self.camera_state.projection.calc_matrix().invert().unwrap() * ray_clip;
         ray_eye.z = -1.0;
         ray_eye.w = 0.0;
-        let ray_world = (self.camera_state.camera.calc_view_matrix().invert().unwrap() * ray_eye).normalize();
+        let ray_world = (self
+            .camera_state
+            .camera
+            .calc_view_matrix()
+            .invert()
+            .unwrap()
+            * ray_eye)
+            .normalize();
 
         let end = start + self.camera_state.projection.zfar * ray_world;
 
         self.rendering.add_line(
             SimpleVertex {
-                position: [
-                    start.x,
-                    start.y,
-                    start.z
-                ],
+                position: [start.x, start.y, start.z],
             },
             SimpleVertex {
-                position: [
-                    end.x,
-                    end.y,
-                    end.z,
-                ],
-            }
+                position: [end.x, end.y, end.z],
+            },
         );
-        self.rendering.gui.program_state.queue_message(Message::DebugInfo(
-            format!(
+        self.rendering
+            .gui
+            .program_state
+            .queue_message(editor::Message::DebugInfo(format!(
                 "camera x {}, camera y {}, camera z {}",
-                self.camera_state.camera.position[0], self.camera_state.camera.position[1], self.camera_state.camera.position[2]
-            ),
-        ));
+                self.camera_state.camera.position[0],
+                self.camera_state.camera.position[1],
+                self.camera_state.camera.position[2]
+            )));
     }
 
     fn get_normalized_click_coords(&self) -> Vector4<f32> {
         Vector4::new(
-            (2.0 * self.rendering.gui.cursor_position.x as f32) / self.rendering.sc_desc.width as f32 - 1.0,
-             1.0 - (2.0 * self.rendering.gui.cursor_position.y as f32) / self.rendering.sc_desc.height as f32,
+            (2.0 * self.rendering.gui.cursor_position.x as f32)
+                / self.rendering.sc_desc.width as f32
+                - 1.0,
+            1.0 - (2.0 * self.rendering.gui.cursor_position.y as f32)
+                / self.rendering.sc_desc.height as f32,
             0.0,
-            1.0
+            1.0,
         )
     }
 
     pub fn render(&mut self) {
         self.rendering.render(&self.window);
     }
+}
+
+fn calc_bounding_sphere_radius(model: &Model) -> f32 {
+    let mut lengths: Vec<OrderedFloat<f32>> = vec![];
+    for mesh in model.meshes.iter() {
+        lengths = mesh.vertices.iter().map(|vertex| {
+            // todo how to do it in one line?
+            let length: f32 = vertex.position.x.pow(2) + vertex.position.y.pow(2) + vertex.position.z.pow(2);
+            OrderedFloat(length.sqrt())
+        }).collect();
+    }
+    lengths.iter().max().unwrap().into_inner()
 }

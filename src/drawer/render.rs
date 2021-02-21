@@ -1,9 +1,10 @@
 use crate::buffer::Uniforms;
+use crate::drawer::debug::DebugDrawer;
 use crate::drawer::model::ModelDrawer;
-use crate::model::{ModelVertex, Vertex, SimpleVertex};
+use crate::model::{ModelVertex, SimpleVertex, Vertex};
 use crate::scene::GUI;
 use crate::texture::Texture;
-use crate::{drawer, object, model, texture};
+use crate::{drawer, model, object, texture};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
@@ -13,8 +14,6 @@ use iced_winit::winit::window::Window;
 use std::collections::HashMap;
 use std::iter;
 use std::time::Instant;
-use crate::drawer::debug::DebugDrawer;
-use iced::Application;
 
 #[macro_export]
 macro_rules! declare_handle {
@@ -161,8 +160,8 @@ impl RenderingState {
 
     // todo add update all method?
 
-    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &object::Instance) {
-        self.model_drawer.update_instance(handle, instance_idx, instance, &self.queue);
+    pub fn update_object(&mut self, object: &object::Object) {
+        self.model_drawer.update_object(object, &self.queue);
     }
 
     pub fn render(&mut self, window: &Window) {
@@ -275,7 +274,7 @@ pub fn build_render_pipeline(
             depth_compare: wgpu::CompareFunction::Less,
             stencil: wgpu::StencilState::default(),
             bias: Default::default(),
-            clamp_depth: false
+            clamp_depth: false,
         }),
         multisample: wgpu::MultisampleState {
             count: 1,

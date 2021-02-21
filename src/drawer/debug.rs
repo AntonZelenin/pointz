@@ -1,9 +1,9 @@
 use crate::drawer::render::Drawer;
-use iced_wgpu::wgpu;
-use iced_wgpu::wgpu::{RenderPass, PipelineLayout, ShaderModule};
-use iced_wgpu::wgpu::util::DeviceExt;
 use crate::model::{SimpleVertex, Vertex};
 use crate::texture;
+use iced_wgpu::wgpu;
+use iced_wgpu::wgpu::util::DeviceExt;
+use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
 
 pub struct DebugDrawer {
     pub render_pipeline: wgpu::RenderPipeline,
@@ -106,7 +106,7 @@ pub fn build_render_pipeline(
                 color_blend: wgpu::BlendState::REPLACE,
                 alpha_blend: wgpu::BlendState::REPLACE,
                 write_mask: wgpu::ColorWrite::ALL,
-            }]
+            }],
         }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::LineList,
@@ -121,7 +121,7 @@ pub fn build_render_pipeline(
             depth_compare: wgpu::CompareFunction::Less,
             stencil: wgpu::StencilState::default(),
             bias: Default::default(),
-            clamp_depth: false
+            clamp_depth: false,
         }),
         multisample: wgpu::MultisampleState {
             count: 1,

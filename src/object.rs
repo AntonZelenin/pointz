@@ -1,5 +1,5 @@
-use cgmath::{Matrix4, Quaternion, Vector3};
 use crate::drawer::render::ObjectHandle;
+use cgmath::{Matrix4, Quaternion, Vector3};
 use legion::Entity;
 
 pub const NUM_INSTANCES_PER_ROW: u32 = 5;
@@ -12,9 +12,18 @@ pub const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(
 
 pub struct Object {
     pub handle: ObjectHandle,
+    pub instance_index: usize,
     pub position: Vector3<f32>,
     pub rotation: Quaternion<f32>,
     pub(crate) components: Vec<Entity>,
+}
+
+impl Object {
+    pub fn to_raw_instance(&self) -> InstanceRaw {
+        InstanceRaw {
+            model: Matrix4::from_translation(self.position) * Matrix4::from(self.rotation),
+        }
+    }
 }
 
 #[derive(Clone)]

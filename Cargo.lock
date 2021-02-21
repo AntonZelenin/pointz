@@ -1139,6 +1139,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ad8819b352632f676098176a51e11e324e8cee4c2518dd67e58c36b848438e6"
+dependencies = [
+ "version_check",
+]
+
+[[package]]
 name = "glow"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1159,7 +1168,7 @@ dependencies = [
  "glyph_brush_draw_cache",
  "glyph_brush_layout",
  "log",
- "ordered-float",
+ "ordered-float 1.1.0",
  "rustc-hash",
  "twox-hash",
 ]
@@ -1295,7 +1304,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "font-kit",
- "glam",
+ "glam 0.10.2",
  "iced_native",
  "iced_style",
  "raw-window-handle",
@@ -1970,6 +1979,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ordered-float"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "766f840da25490628d8e63e529cd21c014f6600c6b8517add12a6fa6167a6218"
+dependencies = [
+ "num-traits 0.2.12",
+]
+
+[[package]]
 name = "owned_ttf_parser"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2055,6 +2073,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "physics"
+version = "0.1.0"
+dependencies = [
+ "glam 0.12.0",
+]
+
+[[package]]
 name = "pin-project"
 version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2106,12 +2131,15 @@ dependencies = [
  "bytemuck",
  "cgmath",
  "env_logger",
+ "glam 0.12.0",
  "iced",
  "iced_wgpu",
  "iced_winit",
  "image",
  "legion",
  "log",
+ "ordered-float 2.1.1",
+ "physics",
  "shaderc",
  "tobj",
 ]
