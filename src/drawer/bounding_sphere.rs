@@ -5,15 +5,15 @@ use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
 
-pub struct DebugDrawer {
+pub struct BoundingSpheresDrawer {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buff: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
 }
 
-impl DebugDrawer {
-    pub fn new(device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> DebugDrawer {
-        let debug_uniform_bind_group_layout =
+impl BoundingSpheresDrawer {
+    pub fn new(device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> BoundingSpheresDrawer {
+        let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -28,7 +28,7 @@ impl DebugDrawer {
                 label: Some("debug_uniform_bind_group_layout"),
             });
         let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &debug_uniform_bind_group_layout,
+            layout: &uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::Buffer {
@@ -39,16 +39,22 @@ impl DebugDrawer {
             }],
             label: Some("debug_uniform_bind_group"),
         });
+        let centers_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            // contents: bytemuck::cast_slice(&[light]),
+            contents: &[],
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            label: Some("light buffer"),
+        });
         let debug_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("debug pipeline"),
-                bind_group_layouts: &[&debug_uniform_bind_group_layout],
+                label: Some("bounding sphere pipeline"),
+                bind_group_layouts: &[&uniform_bind_group_layout],
                 push_constant_ranges: &[],
             });
             let vs_module =
-                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/line.vert.spv"));
+                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/bounding_sphere.vert.spv"));
             let fs_module =
-                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/line.frag.spv"));
+                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/bounding_sphere.frag.spv"));
             build_render_pipeline(device, &layout, vs_module, fs_module)
         };
         let vertex_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -63,19 +69,15 @@ impl DebugDrawer {
             ]),
             usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
         });
-        DebugDrawer {
+        BoundingSpheresDrawer {
             render_pipeline: debug_render_pipeline,
             vertex_buff,
             uniform_bind_group,
         }
     }
-
-    pub fn add_line(&mut self, start: SimpleVertex, end: SimpleVertex, queue: &wgpu::Queue) {
-        queue.write_buffer(&self.vertex_buff, 0, bytemuck::cast_slice(&[start, end]));
-    }
 }
 
-impl Drawer for DebugDrawer {
+impl Drawer for BoundingSpheresDrawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buff.slice(..));

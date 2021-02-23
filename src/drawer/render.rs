@@ -2,7 +2,7 @@ use crate::buffer::Uniforms;
 use crate::drawer::debug::DebugDrawer;
 use crate::drawer::model::ModelDrawer;
 use crate::model::{ModelVertex, SimpleVertex, Vertex};
-use crate::scene::GUI;
+use crate::app::GUI;
 use crate::texture::Texture;
 use crate::{drawer, model, object, texture};
 use iced_wgpu::wgpu;
@@ -14,6 +14,7 @@ use iced_winit::winit::window::Window;
 use std::collections::HashMap;
 use std::iter;
 use std::time::Instant;
+use crate::drawer::bounding_sphere::BoundingSpheresDrawer;
 
 #[macro_export]
 macro_rules! declare_handle {
@@ -68,6 +69,7 @@ pub struct RenderingState {
     pub last_render_time: Instant,
     model_drawer: ModelDrawer,
     debug_drawer: DebugDrawer,
+    bounding_spheres_drawer: BoundingSpheresDrawer,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -125,6 +127,8 @@ impl RenderingState {
             scale_factor,
         );
         let gui = GUI::new(&device, scale_factor, size);
+
+        let bounding_spheres_drawer = BoundingSpheresDrawer::new(&device, &uniform_buffer);
 
         RenderingState {
             gui,

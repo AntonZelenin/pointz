@@ -216,14 +216,7 @@ impl App {
         let mut ray_eye = self.camera_state.projection.calc_matrix().invert().unwrap() * ray_clip;
         ray_eye.z = -1.0;
         ray_eye.w = 0.0;
-        let ray_world = (self
-            .camera_state
-            .camera
-            .calc_view_matrix()
-            .invert()
-            .unwrap()
-            * ray_eye)
-            .normalize();
+        let ray_world = (self.camera_state.camera.calc_view_matrix().invert().unwrap() * ray_eye).normalize();
 
         let end = start + self.camera_state.projection.zfar * ray_world;
 
@@ -263,11 +256,14 @@ impl App {
     }
 }
 
+// todo move
 fn calc_bounding_sphere_radius(model: &Model) -> f32 {
     let mut lengths: Vec<OrderedFloat<f32>> = vec![];
     for mesh in model.meshes.iter() {
         lengths = mesh.vertices.iter().map(|vertex| {
             // todo how to do it in one line?
+            // todo move to a math lib? or it already exists?
+            // we measure the distance between the model space 0,0,0 and a vertex, so vertex vector will always be the same as it's coords
             let length: f32 = vertex.position.x.pow(2) + vertex.position.y.pow(2) + vertex.position.z.pow(2);
             OrderedFloat(length.sqrt())
         }).collect();

@@ -9,15 +9,16 @@ mod lighting;
 mod model;
 mod object;
 mod primitives;
-mod scene;
+mod app;
 mod shader;
 mod texture;
 mod widgets;
 
-use scene::App;
+use app::App;
 
 pub fn main() {
-    env_logger::init();
+    // todo has anything changed?
+    // env_logger::init();
     shader::compile_shaders("src/shader");
     App::run();
 }
