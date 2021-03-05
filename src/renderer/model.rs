@@ -1,5 +1,5 @@
-use crate::drawer::render;
-use crate::drawer::render::{MaterialHandle, MeshHandle, ObjectHandle, ResourceRegistry};
+use crate::renderer::render;
+use crate::renderer::render::{MaterialHandle, MeshHandle, ObjectHandle, ResourceRegistry};
 use crate::lighting::Light;
 use crate::texture::TextureType;
 use crate::{model, object, texture};
@@ -7,6 +7,7 @@ use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::RenderPass;
 use std::ops::Range;
+use crate::model::{ModelVertex, Vertex};
 
 struct InternalMesh {
     handle: MeshHandle,
@@ -69,9 +70,9 @@ impl ModelDrawer {
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.vert.spv"));
             let fs_module =
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.frag.spv"));
-            render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
+            render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module, ModelVertex::desc(), wgpu::PrimitiveTopology::TriangleList)
         };
-        // todo light seems like it needs to be moved to a different drawer (¬_¬)
+        // todo light seems like it needs to be moved to a different renderer (¬_¬)
         let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
         // We'll want to update our lights position, so we use COPY_DST
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -143,6 +144,7 @@ impl ModelDrawer {
                 material_handle,
             });
         }
+        // todo allocate large buffer for instances so that you'll need to reallocate it only when it's exceeded
         let instance_buffer = self.create_instance_buffer(instances, device);
         self.uniform_bind_group_registry.insert(
             object_handle.0,

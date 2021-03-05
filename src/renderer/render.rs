@@ -1,10 +1,10 @@
-use crate::buffer::Uniforms;
-use crate::drawer::debug::DebugDrawer;
-use crate::drawer::model::ModelDrawer;
-use crate::model::{ModelVertex, SimpleVertex, Vertex};
+use crate::renderer::buffer::Uniforms;
+use crate::renderer::debug::DebugDrawer;
+use crate::renderer::model::ModelDrawer;
+use crate::model::{SimpleVertex};
 use crate::app::GUI;
 use crate::texture::Texture;
-use crate::{drawer, model, object, texture};
+use crate::{renderer, model, object, texture};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
@@ -14,7 +14,8 @@ use iced_winit::winit::window::Window;
 use std::collections::HashMap;
 use std::iter;
 use std::time::Instant;
-use crate::drawer::bounding_sphere::BoundingSpheresDrawer;
+use crate::renderer::bounding_sphere::BoundingSpheresDrawer;
+// todo wgpu must be only inside the renderer
 
 #[macro_export]
 macro_rules! declare_handle {
@@ -30,7 +31,7 @@ macro_rules! declare_handle {
     )*};
 }
 
-declare_handle!(MeshHandle, MaterialHandle, ObjectHandle, InstanceHandle);
+declare_handle!(MeshHandle, MaterialHandle, ObjectHandle);
 
 pub struct ResourceRegistry<T> {
     mapping: HashMap<usize, T>,
@@ -69,7 +70,7 @@ pub struct RenderingState {
     pub last_render_time: Instant,
     model_drawer: ModelDrawer,
     debug_drawer: DebugDrawer,
-    bounding_spheres_drawer: BoundingSpheresDrawer,
+    bounding_spheres_drawer: Option<BoundingSpheresDrawer>,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -110,7 +111,7 @@ impl RenderingState {
         };
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
         let depth_texture = Texture::create_depth_texture(&sc_desc, "depth_texture");
-        let depth_texture_view = drawer::model::create_depth_view(&depth_texture, &device, &queue);
+        let depth_texture_view = renderer::model::create_depth_view(&depth_texture, &device, &queue);
         let uniforms = Uniforms::new();
         // todo will update it later using camera
         // uniforms.update_view_proj(&camera, &projection);
@@ -128,8 +129,6 @@ impl RenderingState {
         );
         let gui = GUI::new(&device, scale_factor, size);
 
-        let bounding_spheres_drawer = BoundingSpheresDrawer::new(&device, &uniform_buffer);
-
         RenderingState {
             gui,
             viewport,
@@ -143,23 +142,30 @@ impl RenderingState {
             uniform_buffer,
             model_drawer,
             debug_drawer,
+            bounding_spheres_drawer: None,
             depth_texture_view,
         }
     }
 
-    // todo I need to wrap evey call to drawer, improve
+    // todo I need to wrap evey call to renderer, improve
     pub fn add_model(
         &mut self,
         model: &model::Model,
         instances: &Vec<object::Instance>,
     ) -> ObjectHandle {
-        self.model_drawer.add_model(
-            &model,
+        let object_handler = self.model_drawer.add_model(
+            model,
             instances,
             &self.device,
             &self.queue,
             &self.uniform_buffer,
-        )
+        );
+        match &mut self.bounding_spheres_drawer {
+            None => self.bounding_spheres_drawer = Some(BoundingSpheresDrawer::new(&self.device, &self.uniform_buffer)),
+            _ => {}
+        }
+        self.bounding_spheres_drawer.as_mut().unwrap().add(model, instances, &self.device, &self.uniform_buffer);
+        object_handler
     }
 
     // todo add update all method?
@@ -215,8 +221,12 @@ impl RenderingState {
                     }),
                 }),
             });
+            // todo if I comment model renderer get frame will fail with timeout
             self.model_drawer.draw(&mut render_pass);
             self.debug_drawer.draw(&mut render_pass);
+            if let Some(bounding_spheres_drawer) = &self.bounding_spheres_drawer {
+                bounding_spheres_drawer.draw(&mut render_pass);
+            }
         }
 
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
@@ -246,6 +256,8 @@ pub fn build_render_pipeline(
     render_pipeline_layout: &PipelineLayout,
     vs_module: ShaderModule,
     fs_module: ShaderModule,
+    vertex_buffer_layout: wgpu::VertexBufferLayout,
+    topology: wgpu::PrimitiveTopology,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("main"),
@@ -253,7 +265,7 @@ pub fn build_render_pipeline(
         vertex: wgpu::VertexState {
             module: &vs_module,
             entry_point: "main",
-            buffers: &[ModelVertex::desc()],
+            buffers: &[vertex_buffer_layout],
         },
         fragment: Some(wgpu::FragmentState {
             module: &fs_module,
@@ -266,7 +278,7 @@ pub fn build_render_pipeline(
             }],
         }),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
+            topology,
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: wgpu::CullMode::Back,
             strip_index_format: None,

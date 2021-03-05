@@ -11,7 +11,7 @@ uniform Resolution {
 };
 
 vec4 draw_circle(float radius, vec2 center) {
-    float thikness = 0.001;
+    float thikness = 1.0;
     vec2 pos = gl_FragCoord.xy / u_resolution;
     float len = length(pos.xy - center);
     if (len < radius + thikness && len > radius - thikness) {

@@ -6,9 +6,6 @@ layout(location=2) in vec3 a_normal;
 layout(location=3) in vec3 a_tangent;
 layout(location=4) in vec3 a_bitangent;
 
-//layout(location=5) in vec3 vec_start;
-//layout(location=6) in vec3 vec_end;
-
 layout(location=0) out vec2 v_tex_coords;
 layout(location=1) out vec3 v_position;
 layout(location=2) out vec3 v_light_position;

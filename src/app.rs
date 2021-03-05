@@ -1,13 +1,12 @@
 use crate::camera::CameraState;
-use crate::drawer::render::RenderingState;
+use crate::renderer::render::RenderingState;
 use crate::model::{Model, SimpleVertex};
 use crate::object::{Instance, Object, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::texture::Texture;
 use crate::widgets::fps;
-use crate::{drawer, editor, event, model};
+use crate::{renderer, editor, event, model};
 use cgmath::prelude::*;
 use cgmath::{Deg, Quaternion, Rad, Vector3, Vector4};
-use glam::Vec3;
 use iced_wgpu::wgpu;
 use iced_wgpu::{Backend, Renderer, Settings};
 use iced_winit::winit::event_loop::EventLoop;
@@ -16,8 +15,6 @@ use iced_winit::{conversion, program, winit, Debug, Size};
 use legion;
 use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
-use cgmath::num_traits::Pow;
-use ordered_float::OrderedFloat;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
@@ -111,9 +108,9 @@ impl App {
         let mut i: i32 = -1;
         for model in obj_models {
             i += 1;
-            for z in 0..NUM_ROWS {
-                let instances = (0..NUM_INSTANCES_PER_ROW)
-                    .map(move |x| {
+            let instances = (0..NUM_ROWS)
+                .flat_map(|z| {
+                    (0..NUM_INSTANCES_PER_ROW).map(move |x| {
                         let position = Vector3 {
                             x: (x * 6) as f32,
                             y: 0.0,
@@ -131,28 +128,28 @@ impl App {
 
                         Instance { position, rotation }
                     })
-                    .collect();
-                let object_handle = self.rendering.add_model(&model, &instances);
-                for (idx, instance) in instances.iter().enumerate() {
-                    let mut object = Object {
-                        handle: object_handle,
-                        instance_index: idx,
-                        position: instance.position,
-                        rotation: instance.rotation,
-                        components: vec![],
-                    };
-                    object
-                        .components
-                        .push(self.world.entities.push((physics::BoundingSphere {
-                            center: Vec3::new(
-                                instance.position.x,
-                                instance.position.y,
-                                instance.position.z,
-                            ),
-                            radius: calc_bounding_sphere_radius(&model),
-                        },)));
-                    objects.push(object);
-                }
+                })
+                .collect::<Vec<_>>();
+            let object_handle = self.rendering.add_model(&model, &instances);
+            for (idx, instance) in instances.iter().enumerate() {
+                let object = Object {
+                    handle: object_handle,
+                    instance_index: idx,
+                    position: instance.position,
+                    rotation: instance.rotation,
+                    components: vec![],
+                };
+                // object
+                //     .components
+                //     .push(self.world.entities.push((physics::BoundingSphere {
+                //         center: Vec3::new(
+                //             instance.position.x,
+                //             instance.position.y,
+                //             instance.position.z,
+                //         ),
+                //         radius: calc_bounding_sphere_radius(&model),
+                //     },)));
+                objects.push(object);
             }
         }
         self.world.objects = objects;
@@ -166,7 +163,7 @@ impl App {
         self.rendering.sc_desc.width = new_size.width;
         self.rendering.sc_desc.height = new_size.height;
         let depth_texture = Texture::create_depth_texture(&self.rendering.sc_desc, "depth_texture");
-        self.rendering.depth_texture_view = drawer::model::create_depth_view(
+        self.rendering.depth_texture_view = renderer::model::create_depth_view(
             &depth_texture,
             &self.rendering.device,
             &self.rendering.queue,
@@ -254,19 +251,4 @@ impl App {
     pub fn render(&mut self) {
         self.rendering.render(&self.window);
     }
-}
-
-// todo move
-fn calc_bounding_sphere_radius(model: &Model) -> f32 {
-    let mut lengths: Vec<OrderedFloat<f32>> = vec![];
-    for mesh in model.meshes.iter() {
-        lengths = mesh.vertices.iter().map(|vertex| {
-            // todo how to do it in one line?
-            // todo move to a math lib? or it already exists?
-            // we measure the distance between the model space 0,0,0 and a vertex, so vertex vector will always be the same as it's coords
-            let length: f32 = vertex.position.x.pow(2) + vertex.position.y.pow(2) + vertex.position.z.pow(2);
-            OrderedFloat(length.sqrt())
-        }).collect();
-    }
-    lengths.iter().max().unwrap().into_inner()
 }

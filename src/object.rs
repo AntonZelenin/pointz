@@ -1,4 +1,4 @@
-use crate::drawer::render::ObjectHandle;
+use crate::renderer::render::ObjectHandle;
 use cgmath::{Matrix4, Quaternion, Vector3};
 use legion::Entity;
 

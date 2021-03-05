@@ -3,10 +3,12 @@ use anyhow::*;
 use iced_wgpu::wgpu;
 use std::path::Path;
 
+// todo move to render?
 pub trait Vertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a>;
 }
 
+// todo move to render?
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct SimpleVertex {

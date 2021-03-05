@@ -12,11 +12,13 @@ uniform Uniforms {
 };
 
 layout(set=0, binding=1)
-buffer Radii {
-    float radii[];
+buffer Radius {
+    float a_radius;
 };
 
 void main() {
     position = u_view_proj * vec4(pos, 1.0);
-    radius = radii[gl_VertexIndex] / position.z;
+    gl_Position = position;
+//    radius = a_radius / pos.z;
+    radius = 1.0;
 }
