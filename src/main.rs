@@ -14,6 +14,7 @@ mod app;
 mod shader;
 mod texture;
 mod widgets;
+mod scene;
 
 pub fn main() {
     shader::compile_shaders("src/shader");

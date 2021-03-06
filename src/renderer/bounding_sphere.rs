@@ -18,7 +18,7 @@ pub struct BoundingSpheresDrawer {
 }
 
 impl BoundingSpheresDrawer {
-    pub fn new(device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) -> BoundingSpheresDrawer {
+    pub fn new(device: &wgpu::Device) -> BoundingSpheresDrawer {
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -150,7 +150,7 @@ impl Drawer for BoundingSpheresDrawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buff.slice(..));
-        render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        render_pass.set_bind_group(0, &self.uniform_bind_group.as_ref().unwrap(), &[]);
         // todo set vertices dynamically
         render_pass.draw(0..self.num_vertices as u32, 0..1);
     }

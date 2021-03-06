@@ -17,6 +17,7 @@ struct InternalMesh {
 
 struct InternalObject {
     handle: ObjectHandle,
+    // todo probably it shouldn't depend on the object module
     instances: Vec<object::Instance>,
     internal_meshes: Vec<InternalMesh>,
 }

@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::iter;
 use std::time::Instant;
 use crate::renderer::bounding_sphere::BoundingSpheresDrawer;
-// todo wgpu must be only inside the renderer
+// todo wgpu must be only inside the renderer, but that's not for sure
 
 #[macro_export]
 macro_rules! declare_handle {
@@ -31,6 +31,7 @@ macro_rules! declare_handle {
     )*};
 }
 
+// todo are you sure it should be in rendering?
 declare_handle!(MeshHandle, MaterialHandle, ObjectHandle);
 
 pub struct ResourceRegistry<T> {
@@ -161,7 +162,7 @@ impl RenderingState {
             &self.uniform_buffer,
         );
         match &mut self.bounding_spheres_drawer {
-            None => self.bounding_spheres_drawer = Some(BoundingSpheresDrawer::new(&self.device, &self.uniform_buffer)),
+            None => self.bounding_spheres_drawer = Some(BoundingSpheresDrawer::new(&self.device)),
             _ => {}
         }
         self.bounding_spheres_drawer.as_mut().unwrap().add(model, instances, &self.device, &self.uniform_buffer);
