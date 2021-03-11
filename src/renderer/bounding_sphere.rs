@@ -7,7 +7,7 @@ use crate::renderer::render;
 use crate::model;
 use cgmath::num_traits::Pow;
 use ordered_float::OrderedFloat;
-use crate::object::Instance;
+use crate::scene::manager::NewObject;
 
 pub struct BoundingSpheresDrawer {
     render_pipeline: wgpu::RenderPipeline,
@@ -101,12 +101,12 @@ impl BoundingSpheresDrawer {
     }
 
     // todo try to store a link to a device? renderer will always live longer than  specific renderers
-    pub fn add(&mut self, model: &model::Model, instances: &Vec<Instance>, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) {
+    pub fn add(&mut self, model: &model::Model, instances: &Vec<&NewObject>, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) {
         // todo it should write to the same buffer, now it creates a new one for each model
         let mut centers: Vec<SimpleVertex> = vec![];
         for instance in instances.iter() {
             centers.push(SimpleVertex {
-                position: [instance.position.x, instance.position.y, instance.position.z],
+                position: [instance.transform.position.x, instance.transform.position.y, instance.transform.position.z],
             })
         }
         self.vertex_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

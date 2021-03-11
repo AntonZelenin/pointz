@@ -2,7 +2,6 @@ use crate::renderer::buffer::Uniforms;
 use crate::renderer::debug::DebugDrawer;
 use crate::renderer::model::ModelDrawer;
 use crate::model::{SimpleVertex};
-use crate::app::GUI;
 use crate::texture::Texture;
 use crate::{renderer, model, object, texture};
 use iced_wgpu::wgpu;
@@ -15,6 +14,8 @@ use std::collections::HashMap;
 use std::iter;
 use std::time::Instant;
 use crate::renderer::bounding_sphere::BoundingSpheresDrawer;
+use crate::editor::GUI;
+use crate::scene::manager::NewObject;
 // todo wgpu must be only inside the renderer, but that's not for sure
 
 #[macro_export]
@@ -32,8 +33,10 @@ macro_rules! declare_handle {
 }
 
 // todo are you sure it should be in rendering?
-declare_handle!(MeshHandle, MaterialHandle, ObjectHandle);
+// todo NewObjectHandle is temporary
+declare_handle!(MeshHandle, MaterialHandle, ModelHandle, ObjectHandle, NewObjectHandle);
 
+// todo seems I don't need it, I can use HashMap
 pub struct ResourceRegistry<T> {
     mapping: HashMap<usize, T>,
 }
@@ -45,12 +48,22 @@ impl<T> ResourceRegistry<T> {
         }
     }
 
-    pub fn insert(&mut self, handle: usize, data: T) {
-        self.mapping.insert(handle, data);
+    pub fn insert(&mut self, id: usize, data: T) {
+        self.mapping.insert(id, data);
     }
 
     pub fn get(&self, handle: usize) -> &T {
         self.mapping.get(&handle).unwrap()
+    }
+
+    pub fn len(&self) -> usize {
+        self.mapping.len()
+    }
+}
+
+impl<T> ResourceRegistry<T> {
+    fn next(&mut self) -> Option<(&usize, &T)> {
+        self.mapping.iter().next()
     }
 }
 
@@ -149,10 +162,10 @@ impl RenderingState {
     }
 
     // todo I need to wrap evey call to renderer, improve
-    pub fn add_model(
+    pub fn add_instances(
         &mut self,
         model: &model::Model,
-        instances: &Vec<object::Instance>,
+        instances: &Vec<&NewObject>,
     ) -> ObjectHandle {
         let object_handler = self.model_drawer.add_model(
             model,
@@ -171,7 +184,7 @@ impl RenderingState {
 
     // todo add update all method?
 
-    pub fn update_object(&mut self, object: &object::Object) {
+    pub fn update_object(&mut self, object: &NewObject) {
         self.model_drawer.update_object(object, &self.queue);
     }
 

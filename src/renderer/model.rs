@@ -2,12 +2,20 @@ use crate::renderer::render;
 use crate::renderer::render::{MaterialHandle, MeshHandle, ObjectHandle, ResourceRegistry};
 use crate::lighting::Light;
 use crate::texture::TextureType;
-use crate::{model, object, texture};
+use crate::{model, texture};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::RenderPass;
 use std::ops::Range;
 use crate::model::{ModelVertex, Vertex};
+use crate::app::IndexDriver;
+use crate::scene::manager::NewObject;
+use cgmath::{Vector3, Quaternion};
+
+struct Instance {
+    pub position: Vector3<f32>,
+    pub rotation: Quaternion<f32>,
+}
 
 struct InternalMesh {
     handle: MeshHandle,
@@ -18,23 +26,8 @@ struct InternalMesh {
 struct InternalObject {
     handle: ObjectHandle,
     // todo probably it shouldn't depend on the object module
-    instances: Vec<object::Instance>,
+    instances: Vec<Instance>,
     internal_meshes: Vec<InternalMesh>,
-}
-
-struct IndexDriver {
-    current_index: usize,
-}
-
-impl IndexDriver {
-    pub fn new() -> IndexDriver {
-        IndexDriver { current_index: 0 }
-    }
-
-    pub fn next_id(&mut self) -> usize {
-        self.current_index += 1;
-        self.current_index
-    }
 }
 
 pub struct ModelDrawer {
@@ -123,8 +116,9 @@ impl ModelDrawer {
 
     pub fn add_model(
         &mut self,
+        // todo object has model handle, why do I need a model?
         model: &model::Model,
-        instances: &Vec<object::Instance>,
+        objects: &Vec<&NewObject>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         uniform_buffer: &wgpu::Buffer,
@@ -146,16 +140,72 @@ impl ModelDrawer {
             });
         }
         // todo allocate large buffer for instances so that you'll need to reallocate it only when it's exceeded
-        let instance_buffer = self.create_instance_buffer(instances, device);
+        let instance_buffer = self.create_instance_buffer(objects, device);
         self.uniform_bind_group_registry.insert(
             object_handle.0,
             self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer),
         );
         self.instance_buffer_registry
             .insert(object_handle.0, instance_buffer);
+        let mut instances= vec![];
+        // todo improve
+        for object in objects.iter() {
+            instances.push(Instance {
+                position: object.transform.position.clone(),
+                rotation: object.transform.rotation.clone(),
+            });
+        }
         self.objects.push(InternalObject {
             handle: object_handle.clone(),
-            instances: instances.clone(),
+            instances,
+            internal_meshes,
+        });
+        object_handle
+    }
+
+    pub fn add_instances(
+        &mut self,
+        model: &model::Model,
+        objects: &Vec<&NewObject>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        uniform_buffer: &wgpu::Buffer,
+    ) -> ObjectHandle {
+        let object_handle = ObjectHandle(self.index_driver.next_id());
+        let mut internal_meshes: Vec<InternalMesh> = vec![];
+        let material_ids = self.create_material_bind_groups(model, &device, &queue);
+        for mesh in model.meshes.iter() {
+            let mesh_handle = MeshHandle(self.index_driver.next_id());
+            self.index_buffer_registry
+                .insert(mesh_handle.0, self.create_mesh_index_buffer(&mesh, device));
+            self.vertex_buffer_registry
+                .insert(mesh_handle.0, self.create_mesh_vertex_buffer(mesh, device));
+            let material_handle = MaterialHandle(material_ids[mesh.material_id]);
+            internal_meshes.push(InternalMesh {
+                count: mesh.indices.len(),
+                handle: mesh_handle,
+                material_handle,
+            });
+        }
+        // todo allocate large buffer for instances so that you'll need to reallocate it only when it's exceeded
+        let instance_buffer = self.create_instance_buffer(objects, device);
+        self.uniform_bind_group_registry.insert(
+            object_handle.0,
+            self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer),
+        );
+        self.instance_buffer_registry
+            .insert(object_handle.0, instance_buffer);
+        let mut instances= vec![];
+        // todo improve
+        for object in objects.iter() {
+            instances.push(Instance {
+                position: object.transform.position.clone(),
+                rotation: object.transform.rotation.clone(),
+            });
+        }
+        self.objects.push(InternalObject {
+            handle: object_handle.clone(),
+            instances,
             internal_meshes,
         });
         object_handle
@@ -163,12 +213,12 @@ impl ModelDrawer {
 
     fn create_instance_buffer(
         &mut self,
-        instances: &Vec<object::Instance>,
+        instances: &Vec<&NewObject>,
         device: &wgpu::Device,
     ) -> wgpu::Buffer {
         let instance_data = instances
             .iter()
-            .map(object::Instance::to_raw)
+            .map(|instance| instance.transform.to_raw())
             .collect::<Vec<_>>();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&instance_data),
@@ -178,11 +228,12 @@ impl ModelDrawer {
         instance_buffer
     }
 
-    pub fn update_object(&mut self, object: &object::Object, queue: &wgpu::Queue) {
+    pub fn update_object(&mut self, object: &NewObject, queue: &wgpu::Queue) {
         let raw = vec![object.to_raw_instance()];
         let bytes: &[u8] = bytemuck::cast_slice(&raw);
-        let offset = (object.instance_index * bytes.len()) as u64;
+        let offset = (object.instance_id * bytes.len()) as u64;
         queue.write_buffer(
+            // todo object.handle is strange
             self.instance_buffer_registry.get(object.handle.0),
             offset,
             bytes,

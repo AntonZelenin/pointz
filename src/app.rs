@@ -1,50 +1,31 @@
 use crate::camera::CameraState;
 use crate::renderer::render::RenderingState;
-use crate::model::{Model, SimpleVertex};
-use crate::object::{Instance, Object, INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
+use crate::model::SimpleVertex;
+use crate::object::{INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::texture::Texture;
-use crate::widgets::fps;
-use crate::{renderer, editor, event, model};
+use crate::{renderer, editor, event, model, scene};
 use cgmath::prelude::*;
 use cgmath::{Deg, Quaternion, Rad, Vector3, Vector4};
 use iced_wgpu::wgpu;
-use iced_wgpu::{Backend, Renderer, Settings};
 use iced_winit::winit::event_loop::EventLoop;
 use iced_winit::winit::window::{Window, WindowBuilder};
-use iced_winit::{conversion, program, winit, Debug, Size};
-use legion;
-use winit::dpi::PhysicalPosition;
-use winit::dpi::PhysicalSize;
+use crate::scene::manager::Manager;
+use glam::Vec3A;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
-pub struct GUI {
-    pub renderer: Renderer,
-    pub program_state: program::State<editor::GUI>,
-    // todo keep a list of widgets, come up with a normal design
-    fps_meter: fps::Meter,
-    pub cursor_position: PhysicalPosition<f64>,
-    pub debug: Debug,
+pub struct IndexDriver {
+    current_index: usize,
 }
 
-impl GUI {
-    pub fn new(device: &wgpu::Device, scale_factor: f64, size: PhysicalSize<u32>) -> GUI {
-        let mut renderer = iced_wgpu::Renderer::new(Backend::new(device, Settings::default()));
-        let mut debug = Debug::new();
-        let program_state = program::State::new(
-            editor::GUI::new(),
-            Size::new(size.width as f32, size.height as f32),
-            conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), scale_factor),
-            &mut renderer,
-            &mut debug,
-        );
-        GUI {
-            renderer,
-            program_state,
-            fps_meter: fps::Meter::new(),
-            cursor_position: PhysicalPosition::new(0.0, 0.0),
-            debug,
-        }
+impl IndexDriver {
+    pub fn new() -> IndexDriver {
+        IndexDriver { current_index: 0 }
+    }
+
+    pub fn next_id(&mut self) -> usize {
+        self.current_index += 1;
+        self.current_index
     }
 }
 
@@ -53,12 +34,7 @@ pub struct App {
     pub resized: bool,
     pub rendering: RenderingState,
     pub camera_state: CameraState,
-    pub world: World,
-}
-
-pub struct World {
-    objects: Vec<Object>,
-    entities: legion::World,
+    pub scene_manager: Manager,
 }
 
 impl App {
@@ -87,10 +63,7 @@ impl App {
             rendering,
             camera_state,
             resized: false,
-            world: World {
-                objects: Vec::new(),
-                entities: legion::World::default(),
-            },
+            scene_manager: Manager::new(),
         };
         app.load_models();
 
@@ -100,15 +73,34 @@ impl App {
     }
 
     fn load_models(&mut self) {
-        let mut obj_models: Vec<Model> = Vec::new();
-        for model_path in MODELS.iter() {
-            obj_models.push(model::Model::load(model_path).unwrap());
-        }
-        let mut objects: Vec<Object> = vec![];
+        let handle1 = self.scene_manager.add_model(model::Model::load(MODELS[0]).unwrap());
+        let handle2 = self.scene_manager.add_model(model::Model::load(MODELS[1]).unwrap());
         let mut i: i32 = -1;
-        for model in obj_models {
+        for model_handle in [handle1, handle2].iter() {
             i += 1;
-            let instances = (0..NUM_ROWS)
+            // let instances = (0..NUM_ROWS)
+            //     .flat_map(|z| {
+            //         (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+            //             let position = Vector3 {
+            //                 x: (x * 6) as f32,
+            //                 y: 0.0,
+            //                 // * i * 30 just to move the second model next to the first model to showcase
+            //                 z: (z * 6 + i as u32 * 30) as f32,
+            //             } - INSTANCE_DISPLACEMENT;
+            //             let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0));
+            //             // let rotation = if position.is_zero() {
+            //             //     this is needed so an object at (0, 0, 0) won't get scaled to zero
+            //             //     as Quaternions can effect scale if they're not created correctly
+            //             //     Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
+            //             // } else {
+            //             //     Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
+            //             // };
+            //
+            //             Instance { position, rotation }
+            //         })
+            //     })
+            //     .collect::<Vec<_>>();
+            let mut transforms = (0..NUM_ROWS)
                 .flat_map(|z| {
                     (0..NUM_INSTANCES_PER_ROW).map(move |x| {
                         let position = Vector3 {
@@ -126,33 +118,23 @@ impl App {
                         //     Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
                         // };
 
-                        Instance { position, rotation }
+                        scene::manager::Transform {
+                            // position: Vec3A::new(position.x, position.y, position.z),
+                            // rotation: Quat::from_axis_angle(Vec3::unit_z(), 0.0),
+                            position,
+                            rotation,
+                            scale: Vec3A::new(1.0, 1.0, 1.0),
+                        }
                     })
                 })
                 .collect::<Vec<_>>();
-            let object_handle = self.rendering.add_model(&model, &instances);
-            for (idx, instance) in instances.iter().enumerate() {
-                let object = Object {
-                    handle: object_handle,
-                    instance_index: idx,
-                    position: instance.position,
-                    rotation: instance.rotation,
-                    components: vec![],
-                };
-                // object
-                //     .components
-                //     .push(self.world.entities.push((physics::BoundingSphere {
-                //         center: Vec3::new(
-                //             instance.position.x,
-                //             instance.position.y,
-                //             instance.position.z,
-                //         ),
-                //         radius: calc_bounding_sphere_radius(&model),
-                //     },)));
-                objects.push(object);
+            for transform in transforms.iter_mut() {
+                // todo improve, I don't need to clone it
+                self.scene_manager.create_object(*model_handle, transform.clone());
             }
+            let model = self.scene_manager.get_model(model_handle);
+            let object_handle = self.rendering.add_instances(&model, &self.scene_manager.get_model_instances(&model_handle));
         }
-        self.world.objects = objects;
     }
 
     pub fn resize(&mut self) {
@@ -188,8 +170,8 @@ impl App {
             bytemuck::cast_slice(&[self.rendering.uniforms]),
         );
 
-        for object in &mut self.world.objects.iter_mut() {
-            object.rotation = Quaternion::from_angle_y(Rad(0.03)) * object.rotation;
+        for (_, object) in self.scene_manager.get_objects().iter_mut() {
+            object.transform.rotation = Quaternion::from_angle_y(Rad(0.03)) * object.transform.rotation;
             self.rendering.update_object(object);
         }
 
