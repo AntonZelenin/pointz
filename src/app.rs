@@ -11,6 +11,7 @@ use iced_winit::winit::event_loop::EventLoop;
 use iced_winit::winit::window::{Window, WindowBuilder};
 use crate::scene::manager::Manager;
 use glam::Vec3A;
+use std::collections::HashMap;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
@@ -29,12 +30,36 @@ impl IndexDriver {
     }
 }
 
+pub struct MultipleIndexDriver {
+    indices: HashMap<usize, usize>,
+}
+
+impl MultipleIndexDriver {
+    pub fn new() -> Self {
+        Self { indices: HashMap::new() }
+    }
+
+    pub fn next_id(&mut self, key: &usize) -> usize {
+        match self.indices.get_mut(key) {
+            Some(index) => {
+                *index += 1;
+                *index
+            },
+            None => {
+                self.indices.insert(key.clone(), 0);
+                0
+            }
+        }
+    }
+}
+
 pub struct App {
     pub window: Window,
     pub resized: bool,
     pub rendering: RenderingState,
     pub camera_state: CameraState,
     pub scene_manager: Manager,
+    pub model_loader: model::Loader,
 }
 
 impl App {
@@ -64,6 +89,7 @@ impl App {
             camera_state,
             resized: false,
             scene_manager: Manager::new(),
+            model_loader: model::Loader::new(),
         };
         app.load_models();
 
@@ -73,10 +99,10 @@ impl App {
     }
 
     fn load_models(&mut self) {
-        let handle1 = self.scene_manager.add_model(model::Model::load(MODELS[0]).unwrap());
-        let handle2 = self.scene_manager.add_model(model::Model::load(MODELS[1]).unwrap());
+        self.scene_manager.add_model(self.model_loader.load(MODELS[0]).unwrap());
+        self.scene_manager.add_model(self.model_loader.load(MODELS[1]).unwrap());
         let mut i: i32 = -1;
-        for model_handle in [handle1, handle2].iter() {
+        for model_id in self.scene_manager.get_model_ids().iter() {
             i += 1;
             // let instances = (0..NUM_ROWS)
             //     .flat_map(|z| {
@@ -129,11 +155,11 @@ impl App {
                 })
                 .collect::<Vec<_>>();
             for transform in transforms.iter_mut() {
-                // todo improve, I don't need to clone it
-                self.scene_manager.create_object(*model_handle, transform.clone());
+                self.scene_manager.create_object(model_id.clone(), transform.clone());
             }
-            let model = self.scene_manager.get_model(model_handle);
-            let object_handle = self.rendering.add_instances(&model, &self.scene_manager.get_model_instances(&model_handle));
+            let model = self.scene_manager.get_model(model_id.clone());
+            self.rendering.init_model(&model);
+            self.rendering.add_instances(&model, &self.scene_manager.get_model_instances(model.id));
         }
     }
 

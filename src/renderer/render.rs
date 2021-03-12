@@ -3,69 +3,19 @@ use crate::renderer::debug::DebugDrawer;
 use crate::renderer::model::ModelDrawer;
 use crate::model::{SimpleVertex};
 use crate::texture::Texture;
-use crate::{renderer, model, object, texture};
+use crate::{renderer, model, texture};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
 use iced_winit::futures;
 use iced_winit::winit::dpi::PhysicalSize;
 use iced_winit::winit::window::Window;
-use std::collections::HashMap;
 use std::iter;
 use std::time::Instant;
 use crate::renderer::bounding_sphere::BoundingSpheresDrawer;
 use crate::editor::GUI;
 use crate::scene::manager::NewObject;
 // todo wgpu must be only inside the renderer, but that's not for sure
-
-#[macro_export]
-macro_rules! declare_handle {
-    ($($name:ident),*) => {$(
-        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-        pub struct $name(pub(crate) usize);
-
-        impl $name {
-            pub fn get(&self) -> usize {
-                self.0
-            }
-        }
-    )*};
-}
-
-// todo are you sure it should be in rendering?
-// todo NewObjectHandle is temporary
-declare_handle!(MeshHandle, MaterialHandle, ModelHandle, ObjectHandle, NewObjectHandle);
-
-// todo seems I don't need it, I can use HashMap
-pub struct ResourceRegistry<T> {
-    mapping: HashMap<usize, T>,
-}
-
-impl<T> ResourceRegistry<T> {
-    pub fn new() -> ResourceRegistry<T> {
-        ResourceRegistry {
-            mapping: HashMap::new(),
-        }
-    }
-
-    pub fn insert(&mut self, id: usize, data: T) {
-        self.mapping.insert(id, data);
-    }
-
-    pub fn get(&self, handle: usize) -> &T {
-        self.mapping.get(&handle).unwrap()
-    }
-
-    pub fn len(&self) -> usize {
-        self.mapping.len()
-    }
-}
-
-impl<T> ResourceRegistry<T> {
-    fn next(&mut self) -> Option<(&usize, &T)> {
-        self.mapping.iter().next()
-    }
-}
 
 pub trait Drawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>);
@@ -162,16 +112,24 @@ impl RenderingState {
     }
 
     // todo I need to wrap evey call to renderer, improve
+    pub fn init_model(&mut self, model: &model::Model) {
+        self.model_drawer.init_model(
+            model,
+            &self.device,
+            &self.queue,
+            &self.uniform_buffer,
+        )
+    }
+
     pub fn add_instances(
         &mut self,
         model: &model::Model,
         instances: &Vec<&NewObject>,
-    ) -> ObjectHandle {
-        let object_handler = self.model_drawer.add_model(
-            model,
+    ) {
+        self.model_drawer.add_instances(
+            model.id,
             instances,
             &self.device,
-            &self.queue,
             &self.uniform_buffer,
         );
         match &mut self.bounding_spheres_drawer {
@@ -179,7 +137,6 @@ impl RenderingState {
             _ => {}
         }
         self.bounding_spheres_drawer.as_mut().unwrap().add(model, instances, &self.device, &self.uniform_buffer);
-        object_handler
     }
 
     // todo add update all method?

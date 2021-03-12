@@ -1,6 +1,6 @@
-use crate::renderer::render::ObjectHandle;
-use cgmath::{Matrix4, Quaternion, Vector3};
-use legion::Entity;
+use cgmath::Vector3;
+
+// todo ?
 
 pub const NUM_INSTANCES_PER_ROW: u32 = 5;
 pub const NUM_ROWS: u32 = 5;
