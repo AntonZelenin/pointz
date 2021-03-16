@@ -21,5 +21,6 @@ vec4 draw_circle(float radius, vec2 center) {
 }
 
 void main() {
-    outColor = draw_circle(radius, position.xy);
+//    outColor = draw_circle(radius, position.xy);
+    outColor = vec4(1.0);
 }

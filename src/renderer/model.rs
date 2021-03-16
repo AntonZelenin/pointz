@@ -154,7 +154,6 @@ impl ModelDrawer {
         *self.uniform_bind_group_registry.get_mut(&model_id).unwrap() = self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer);
         *self.instance_buffer_registry.get_mut(&model_id).unwrap() = instance_buffer;
         let model = self.models.get_mut(&model_id).unwrap();
-        // todo update when instances added
         model.num_of_instances = objects.len();
     }
 
@@ -168,7 +167,6 @@ impl ModelDrawer {
             .map(|object| object.get_raw_transform())
             .collect::<Vec<_>>();
         let t = bytemuck::cast_slice(&instance_data);
-        let le = t.len();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: t,
             usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
@@ -180,7 +178,6 @@ impl ModelDrawer {
     pub fn update_object(&mut self, object: &NewObject, queue: &wgpu::Queue) {
         let raw = vec![object.get_raw_transform()];
         let bytes: &[u8] = bytemuck::cast_slice(&raw);
-        let le = bytes.len();
         let offset = (object.instance_id * bytes.len()) as u64;
         queue.write_buffer(
             self.instance_buffer_registry.get(&object.model_id).unwrap(),
