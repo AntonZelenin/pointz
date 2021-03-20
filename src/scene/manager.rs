@@ -5,8 +5,15 @@ use legion::Entity;
 use std::collections::HashMap;
 use cgmath::{Matrix4, Vector3, Quaternion};
 
-pub struct NewObject {
-    // todo probably this is temporary
+pub const NUM_INSTANCES_PER_ROW: u32 = 5;
+pub const NUM_ROWS: u32 = 5;
+pub const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(
+    NUM_INSTANCES_PER_ROW as f32 * 0.5,
+    0.0,
+    NUM_ROWS as f32 * 0.5,
+);
+
+pub struct Object {
     pub(crate) id: usize,
     pub model_id: usize,
     pub(crate) instance_id: usize,
@@ -14,10 +21,10 @@ pub struct NewObject {
     entities: Vec<Entity>,
 }
 
-impl NewObject {
-    pub fn get_raw_transform(&self) -> TransformRaw {
-        TransformRaw {
-            model: Matrix4::from_translation(self.transform.position) * Matrix4::from(self.transform.rotation),
+impl Object {
+    pub fn get_raw_transform(&self) -> RawTransform {
+        RawTransform {
+            transform: Matrix4::from_translation(self.transform.position) * Matrix4::from(self.transform.rotation),
         }
     }
 }
@@ -31,17 +38,17 @@ pub struct Transform {
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct TransformRaw {
-    model: Matrix4<f32>,
+pub struct RawTransform {
+    transform: Matrix4<f32>,
 }
 
-unsafe impl bytemuck::Pod for TransformRaw {}
-unsafe impl bytemuck::Zeroable for TransformRaw {}
+unsafe impl bytemuck::Pod for RawTransform {}
+unsafe impl bytemuck::Zeroable for RawTransform {}
 
 pub struct Manager {
     index_driver: MultipleIndexDriver,
     model_registry: HashMap<usize, Model>,
-    object_registry: HashMap<usize, NewObject>,
+    object_registry: HashMap<usize, Object>,
     model_instances: HashMap<usize, Vec<usize>>,
 }
 
@@ -55,10 +62,11 @@ impl Manager {
         }
     }
 
-    pub fn add_model(&mut self, model: Model) {
+    pub fn add_model(&mut self, model: Model) -> usize {
         let model_id = model.id;
         self.model_registry.insert(model_id, model);
         self.model_instances.insert(model_id, vec![]);
+        model_id
     }
 
     pub fn get_model(&self, model_id: usize) -> &Model {
@@ -75,7 +83,7 @@ impl Manager {
             Some(instances) => instances.len(),
             None => 0,
         };
-        let object = NewObject {
+        let object = Object {
             id,
             model_id,
             instance_id,
@@ -88,12 +96,12 @@ impl Manager {
         id
     }
 
-    pub fn get_model_instances(&self, model_id: usize) -> Vec<&NewObject> {
+    pub fn get_model_instances(&self, model_id: usize) -> Vec<&Object> {
         let obj_ids = self.model_instances.get(&model_id).unwrap();
         obj_ids.iter().map(|id| self.object_registry.get(id).unwrap()).collect()
     }
 
-    pub fn get_objects(&mut self) -> &mut HashMap<usize, NewObject> {
+    pub fn get_objects(&mut self) -> &mut HashMap<usize, Object> {
         &mut self.object_registry
     }
 }

@@ -1,22 +1,26 @@
 use crate::renderer::render::Drawer;
 use crate::model::{SimpleVertex, Vertex};
+use crate::renderer::render;
+use crate::model;
+use crate::model::primitives::bounding_sphere;
+use crate::scene::manager::Object;
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::RenderPass;
-use crate::renderer::render;
-use crate::model;
 use cgmath::num_traits::Pow;
 use ordered_float::OrderedFloat;
-use crate::scene::manager::NewObject;
 use std::collections::HashMap;
 
 pub struct BoundingSpheresDrawer {
     model_ids: Vec<usize>,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer_registry: HashMap<usize, wgpu::Buffer>,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
     uniform_bind_group_registry: HashMap<usize, wgpu::BindGroup>,
-    num_vertices: HashMap<usize, usize>,
+    num_mesh_indices: HashMap<usize, usize>,
+    num_instances: HashMap<usize, usize>,
     uniform_bind_group_layout: wgpu::BindGroupLayout,
+    instance_buffer_registry: HashMap<usize, wgpu::Buffer>,
 }
 
 impl BoundingSpheresDrawer {
@@ -36,7 +40,7 @@ impl BoundingSpheresDrawer {
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: wgpu::ShaderStage::VERTEX,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
@@ -45,35 +49,8 @@ impl BoundingSpheresDrawer {
                         count: None,
                     }
                 ],
-                label: Some("debug_uniform_bind_group_layout"),
+                label: Some("bounding sphere uniform bind group layout"),
             });
-        // let empty_radius_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        //     contents: &[],
-        //     usage: wgpu::BufferUsage::STORAGE,
-        //     label: Some("bounding sphere radius buffer"),
-        // });
-        // let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        //     layout: &uniform_bind_group_layout,
-        //     entries: &[
-        //         wgpu::BindGroupEntry {
-        //             binding: 0,
-        //             resource: wgpu::BindingResource::Buffer {
-        //                 buffer: &uniform_buffer,
-        //                 offset: 0,
-        //                 size: None,
-        //             },
-        //         },
-        //         wgpu::BindGroupEntry {
-        //             binding: 1,
-        //             resource: wgpu::BindingResource::Buffer {
-        //                 buffer: &empty_radius_buffer,
-        //                 offset: 0,
-        //                 size: None,
-        //             },
-        //         }
-        //     ],
-        //     label: Some("debug_uniform_bind_group"),
-        // });
         let render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("bounding sphere pipeline"),
@@ -84,41 +61,49 @@ impl BoundingSpheresDrawer {
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/bounding_sphere.vert.spv"));
             let fs_module =
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/bounding_sphere.frag.spv"));
-            // todo point list cannot draw circles, it draws only points
-            render::build_render_pipeline(device, &layout, vs_module, fs_module, SimpleVertex::desc(), wgpu::PrimitiveTopology::LineList)
+            render::build_render_pipeline(device, &layout, vs_module, fs_module, SimpleVertex::desc(), wgpu::PrimitiveTopology::TriangleList)
         };
+        let mesh = bounding_sphere::get_mesh();
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(&mesh.vertices),
+            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            contents: bytemuck::cast_slice(&mesh.indices),
+            usage: wgpu::BufferUsage::INDEX,
+            label: Some("index buffer"),
+        });
 
         BoundingSpheresDrawer {
             model_ids: vec![],
             render_pipeline,
-            vertex_buffer_registry: HashMap::new(),
+            vertex_buffer,
+            index_buffer,
+            instance_buffer_registry: HashMap::new(),
             uniform_bind_group_registry: HashMap::new(),
-            num_vertices: HashMap::new(),
+            num_mesh_indices: HashMap::new(),
+            num_instances: HashMap::new(),
             uniform_bind_group_layout,
         }
     }
 
     // todo try to store a link to a device? renderer will always live longer than  specific renderers
-    pub fn add(&mut self, model: &model::Model, instances: &Vec<&NewObject>, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) {
+    pub fn add(&mut self, model: &model::Model, instances: &Vec<&Object>, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) {
         self.model_ids.push(model.id);
-        let mut centers: Vec<SimpleVertex> = vec![];
+        let mut transforms: Vec<Transform> = vec![];
         for instance in instances.iter() {
-            centers.push(SimpleVertex {
-                position: [instance.transform.position.x, instance.transform.position.y, instance.transform.position.z],
-            })
+            transforms.push(Transform {
+                center: [instance.transform.position.x, instance.transform.position.y, instance.transform.position.z],
+                radius: calc_bounding_sphere_radius(&model),
+            });
         }
+        self.num_instances.insert(model.id, instances.len());
         // todo should I drop existing buffer?
-        self.vertex_buffer_registry.insert(model.id, device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&centers),
-            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-        }));
-        self.num_vertices.insert(model.id, instances.len());
-        let radius_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            // todo now it's the same for all instances, will be updated when models support scaling
-            contents: bytemuck::cast_slice(&[calc_bounding_sphere_radius(&model)]),
+        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            contents: bytemuck::cast_slice(&transforms),
             usage: wgpu::BufferUsage::STORAGE,
-            label: Some("bounding sphere radius buffer"),
+            label: Some("bounding sphere transform buffer"),
         });
         self.uniform_bind_group_registry.insert(model.id, device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.uniform_bind_group_layout,
@@ -134,24 +119,37 @@ impl BoundingSpheresDrawer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Buffer {
-                        buffer: &radius_buffer,
+                        buffer: &instance_buffer,
                         offset: 0,
                         size: None,
                     },
                 }
             ],
-            label: Some("debug_uniform_bind_group"),
+            label: Some("bounding spheres uniform bind group"),
         }));
     }
 }
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct Transform {
+    // it has padding!
+    // position: Vec3A,
+    center: [f32; 3],
+    radius: f32,
+}
+
+unsafe impl bytemuck::Pod for Transform {}
+unsafe impl bytemuck::Zeroable for Transform {}
 
 impl Drawer for BoundingSpheresDrawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
         for model_id in self.model_ids.iter() {
-            render_pass.set_vertex_buffer(0, self.vertex_buffer_registry.get(&model_id).unwrap().slice(..));
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             render_pass.set_bind_group(0, self.uniform_bind_group_registry.get(&model_id).unwrap(), &[]);
-            render_pass.draw(0..*self.num_vertices.get(&model_id).unwrap() as u32, 0..1);
+            render_pass.draw(0..*self.num_instances.get(&model_id).unwrap() as u32, 0..1);
         }
     }
 }

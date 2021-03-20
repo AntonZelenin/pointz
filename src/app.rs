@@ -1,17 +1,17 @@
 use crate::camera::CameraState;
 use crate::renderer::render::RenderingState;
 use crate::model::SimpleVertex;
-use crate::object::{INSTANCE_DISPLACEMENT, NUM_INSTANCES_PER_ROW, NUM_ROWS};
 use crate::texture::Texture;
 use crate::{renderer, editor, event, model, scene};
+use crate::scene::manager::{Manager, NUM_ROWS, NUM_INSTANCES_PER_ROW, INSTANCE_DISPLACEMENT};
 use cgmath::prelude::*;
 use cgmath::{Deg, Quaternion, Rad, Vector3, Vector4};
 use iced_wgpu::wgpu;
 use iced_winit::winit::event_loop::EventLoop;
 use iced_winit::winit::window::{Window, WindowBuilder};
-use crate::scene::manager::Manager;
 use glam::Vec3A;
 use std::collections::HashMap;
+use crate::model::primitives::Primitive;
 
 const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
 
@@ -79,10 +79,6 @@ impl App {
             window.scale_factor(),
         );
         let camera_state = CameraState::new(rendering.sc_desc.width, rendering.sc_desc.height);
-        // world.push((position,));
-        // if let Some(mut entry) = world.entry(object.components[0]) {
-        //     let position = entry.into_component::<Position>();
-        // }
         let mut app = App {
             window,
             rendering,
@@ -91,75 +87,76 @@ impl App {
             scene_manager: Manager::new(),
             model_loader: model::Loader::new(),
         };
-        app.load_models();
+        app.add_objects();
 
         event_loop.run(move |event, _, control_flow| {
             event::processor::process_events(&mut app, &event, control_flow)
         })
     }
 
-    fn load_models(&mut self) {
+    fn add_objects(&mut self) {
         self.scene_manager.add_model(self.model_loader.load(MODELS[0]).unwrap());
         self.scene_manager.add_model(self.model_loader.load(MODELS[1]).unwrap());
+        let bounding_model_id = self.scene_manager.add_model(self.model_loader.load_primitive(Primitive::BoundingSphere));
         let mut i: i32 = -1;
         for model_id in self.scene_manager.get_model_ids().iter() {
-            i += 1;
-            // let instances = (0..NUM_ROWS)
-            //     .flat_map(|z| {
-            //         (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-            //             let position = Vector3 {
-            //                 x: (x * 6) as f32,
-            //                 y: 0.0,
-            //                 // * i * 30 just to move the second model next to the first model to showcase
-            //                 z: (z * 6 + i as u32 * 30) as f32,
-            //             } - INSTANCE_DISPLACEMENT;
-            //             let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0));
-            //             // let rotation = if position.is_zero() {
-            //             //     this is needed so an object at (0, 0, 0) won't get scaled to zero
-            //             //     as Quaternions can effect scale if they're not created correctly
-            //             //     Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
-            //             // } else {
-            //             //     Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
-            //             // };
-            //
-            //             Instance { position, rotation }
-            //         })
-            //     })
-            //     .collect::<Vec<_>>();
-            let mut transforms = (0..NUM_ROWS)
-                .flat_map(|z| {
-                    (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                        let position = Vector3 {
-                            x: (x * 6) as f32,
-                            y: 0.0,
-                            // * i * 30 just to move the second model next to the first model to showcase
-                            z: (z * 6 + i as u32 * 30) as f32,
-                        } - INSTANCE_DISPLACEMENT;
-                        let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0));
-                        // let rotation = if position.is_zero() {
-                        //     this is needed so an object at (0, 0, 0) won't get scaled to zero
-                        //     as Quaternions can effect scale if they're not created correctly
-                        //     Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
-                        // } else {
-                        //     Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
-                        // };
-
-                        scene::manager::Transform {
-                            // position: Vec3A::new(position.x, position.y, position.z),
-                            // rotation: Quat::from_axis_angle(Vec3::unit_z(), 0.0),
-                            position,
-                            rotation,
-                            scale: Vec3A::new(1.0, 1.0, 1.0),
-                        }
-                    })
-                })
-                .collect::<Vec<_>>();
-            for transform in transforms.iter_mut() {
-                self.scene_manager.create_object(model_id.clone(), transform.clone());
+            if *model_id == bounding_model_id {
+                continue;
             }
-            let model = self.scene_manager.get_model(model_id.clone());
+            i += 1;
+            {
+                self.add_instances(i, *model_id);
+                self.add_bounding_sphere_instances(*model_id, bounding_model_id);
+            }
+            let model = self.scene_manager.get_model(*model_id);
             self.rendering.init_model(&model);
             self.rendering.add_instances(&model, &self.scene_manager.get_model_instances(model.id));
+
+            let bounding_sphere = self.scene_manager.get_model(bounding_model_id);
+            self.rendering.init_bounding_sphere(&bounding_sphere);
+            self.rendering.add_bounding_sphere_instances(&model, &self.scene_manager.get_model_instances(bounding_model_id));
+        }
+    }
+
+    fn add_instances(&mut self, i: i32, model_id: usize) {
+        let mut transforms = (0..NUM_ROWS)
+            .flat_map(|z| {
+                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                    let position = Vector3 {
+                        x: (x * 6) as f32,
+                        y: 0.0,
+                        // * i * 30 just to move the second model next to the first model to showcase
+                        z: (z * 6 + i as u32 * 30) as f32,
+                    } - INSTANCE_DISPLACEMENT;
+                    let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0));
+                    // let rotation = if position.is_zero() {
+                    //     this is needed so an object at (0, 0, 0) won't get scaled to zero
+                    //     as Quaternions can effect scale if they're not created correctly
+                    //     Quaternion::from_axis_angle(Vector3::unit_z(), Deg(0.0))
+                    // } else {
+                    //     Quaternion::from_axis_angle(position.clone().normalize(), Deg(45.0))
+                    // };
+
+                    scene::manager::Transform {
+                        position,
+                        rotation,
+                        scale: Vec3A::new(1.0, 1.0, 1.0),
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        for transform in transforms.iter_mut() {
+            self.scene_manager.create_object(model_id.clone(), transform.clone());
+        }
+    }
+
+    fn add_bounding_sphere_instances(&mut self, model_id: usize, bounding_sphere_id: usize) {
+        let mut transforms = vec![];
+        for object in self.scene_manager.get_model_instances(model_id) {
+            transforms.push(object.transform.clone());
+        }
+        for transform in transforms {
+            self.scene_manager.create_object(bounding_sphere_id, transform);
         }
     }
 
@@ -196,10 +193,12 @@ impl App {
             bytemuck::cast_slice(&[self.rendering.uniforms]),
         );
 
-        for (_, object) in self.scene_manager.get_objects().iter_mut() {
-            object.transform.rotation = Quaternion::from_angle_y(Rad(0.03)) * object.transform.rotation;
-            self.rendering.update_object(object);
-        }
+        // todo disabled rotation because models and bounding spheres are all in the schene_manager and I try to rotate all object
+        // todo and in fact models and spheres are in different renderers
+        // for (_, object) in self.scene_manager.get_objects().iter_mut() {
+        //     object.transform.rotation = Quaternion::from_angle_y(Rad(0.03)) * object.transform.rotation;
+        //     self.rendering.update_object(object);
+        // }
 
         self.rendering.gui.fps_meter.push(dt);
         self.rendering

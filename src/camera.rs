@@ -209,7 +209,7 @@ pub struct CursorWatcher {
 impl CursorWatcher {
     pub fn new() -> CursorWatcher {
         CursorWatcher {
-            last_frames_cursor_deltas: Vec::with_capacity(3),
+            last_frames_cursor_deltas: Vec::with_capacity(5),
         }
     }
 

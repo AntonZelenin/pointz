@@ -1,9 +1,12 @@
 use crate::renderer::buffer::Uniforms;
 use crate::renderer::debug::DebugDrawer;
 use crate::renderer::model::ModelDrawer;
-use crate::model::{SimpleVertex};
+use crate::model::{SimpleVertex, Model};
 use crate::texture::Texture;
 use crate::{renderer, model, texture};
+use crate::renderer::bounding_sphere_2::BoundingSpheresDrawer2;
+use crate::editor::GUI;
+use crate::scene::manager::Object;
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
@@ -12,13 +15,22 @@ use iced_winit::winit::dpi::PhysicalSize;
 use iced_winit::winit::window::Window;
 use std::iter;
 use std::time::Instant;
-use crate::renderer::bounding_sphere::BoundingSpheresDrawer;
-use crate::editor::GUI;
-use crate::scene::manager::NewObject;
 // todo wgpu must be only inside the renderer, but that's not for sure
 
 pub trait Drawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>);
+}
+
+pub struct InternalMesh {
+    pub id: usize,
+    pub count: usize,
+    pub material_id: usize,
+}
+
+pub struct InternalModel {
+    pub id: usize,
+    pub num_of_instances: usize,
+    pub internal_meshes: Vec<InternalMesh>,
 }
 
 pub struct RenderingState {
@@ -34,7 +46,7 @@ pub struct RenderingState {
     pub last_render_time: Instant,
     model_drawer: ModelDrawer,
     debug_drawer: DebugDrawer,
-    bounding_spheres_drawer: Option<BoundingSpheresDrawer>,
+    bounding_spheres_drawer: Option<BoundingSpheresDrawer2>,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -112,7 +124,7 @@ impl RenderingState {
     }
 
     // todo I need to wrap evey call to renderer, improve
-    pub fn init_model(&mut self, model: &model::Model) {
+    pub fn init_model(&mut self, model: &Model) {
         self.model_drawer.init_model(
             model,
             &self.device,
@@ -124,7 +136,7 @@ impl RenderingState {
     pub fn add_instances(
         &mut self,
         model: &model::Model,
-        instances: &Vec<&NewObject>,
+        instances: &Vec<&Object>,
     ) {
         self.model_drawer.add_instances(
             model.id,
@@ -132,16 +144,22 @@ impl RenderingState {
             &self.device,
             &self.uniform_buffer,
         );
+    }
+
+    pub fn init_bounding_sphere(&mut self, model: &Model) {
         match &mut self.bounding_spheres_drawer {
-            None => self.bounding_spheres_drawer = Some(BoundingSpheresDrawer::new(&self.device)),
+            None => self.bounding_spheres_drawer = Some(BoundingSpheresDrawer2::new(&self.device, model)),
             _ => {}
         }
-        self.bounding_spheres_drawer.as_mut().unwrap().add(model, instances, &self.device, &self.uniform_buffer);
+    }
+
+    pub fn add_bounding_sphere_instances(&mut self, model: &Model, sphere_instances: &Vec<&Object>) {
+        self.bounding_spheres_drawer.as_mut().unwrap().add(model, sphere_instances, &self.device, &self.uniform_buffer);
     }
 
     // todo add update all method?
 
-    pub fn update_object(&mut self, object: &NewObject) {
+    pub fn update_object(&mut self, object: &Object) {
         self.model_drawer.update_object(object, &self.queue);
     }
 
@@ -195,9 +213,7 @@ impl RenderingState {
             // todo if I comment model renderer get frame will fail with timeout
             self.model_drawer.draw(&mut render_pass);
             self.debug_drawer.draw(&mut render_pass);
-            if let Some(bounding_spheres_drawer) = &self.bounding_spheres_drawer {
-                bounding_spheres_drawer.draw(&mut render_pass);
-            }
+            // self.bounding_spheres_drawer.draw(&mut render_pass);
         }
 
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);

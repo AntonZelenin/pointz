@@ -2,31 +2,20 @@ use crate::renderer::render;
 use crate::lighting::Light;
 use crate::texture::TextureType;
 use crate::{model, texture};
+use crate::model::{ModelVertex, Vertex};
+use crate::app::IndexDriver;
+use crate::scene::manager::Object;
+use crate::renderer::render::{InternalModel, InternalMesh};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::RenderPass;
 use std::ops::Range;
-use crate::model::{ModelVertex, Vertex};
-use crate::app::IndexDriver;
-use crate::scene::manager::NewObject;
 use std::collections::HashMap;
-
-struct InternalMesh {
-    id: usize,
-    count: usize,
-    material_id: usize,
-}
-
-struct InternalModel {
-    id: usize,
-    num_of_instances: usize,
-    internal_meshes: Vec<InternalMesh>,
-}
 
 pub struct ModelDrawer {
     index_driver: IndexDriver,
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub light_bind_group: wgpu::BindGroup,
+    render_pipeline: wgpu::RenderPipeline,
+    light_bind_group: wgpu::BindGroup,
     models: HashMap<usize, InternalModel>,
     material_bind_group_registry: HashMap<usize, wgpu::BindGroup>,
     uniform_bind_group_registry: HashMap<usize, wgpu::BindGroup>,
@@ -120,7 +109,7 @@ impl ModelDrawer {
             self.index_buffer_registry
                 .insert(mesh_id, self.create_mesh_index_buffer(&mesh, device));
             self.vertex_buffer_registry
-                .insert(mesh_id, self.create_mesh_vertex_buffer(mesh, device));
+                .insert(mesh_id, self.create_vertex_buffer(mesh, device));
             let material_id = material_ids[mesh.material_id];
             internal_meshes.push(InternalMesh {
                 count: mesh.indices.len(),
@@ -145,7 +134,7 @@ impl ModelDrawer {
     pub fn add_instances(
         &mut self,
         model_id: usize,
-        objects: &Vec<&NewObject>,
+        objects: &Vec<&Object>,
         device: &wgpu::Device,
         uniform_buffer: &wgpu::Buffer,
     ) {
@@ -159,7 +148,7 @@ impl ModelDrawer {
 
     fn create_instance_buffer(
         &mut self,
-        objects: &Vec<&NewObject>,
+        objects: &Vec<&Object>,
         device: &wgpu::Device,
     ) -> wgpu::Buffer {
         let instance_data = objects
@@ -175,9 +164,9 @@ impl ModelDrawer {
         instance_buffer
     }
 
-    pub fn update_object(&mut self, object: &NewObject, queue: &wgpu::Queue) {
-        let raw = vec![object.get_raw_transform()];
-        let bytes: &[u8] = bytemuck::cast_slice(&raw);
+    pub fn update_object(&mut self, object: &Object, queue: &wgpu::Queue) {
+        let transform = vec![object.get_raw_transform()];
+        let bytes: &[u8] = bytemuck::cast_slice(&transform);
         let offset = (object.instance_id * bytes.len()) as u64;
         queue.write_buffer(
             self.instance_buffer_registry.get(&object.model_id).unwrap(),
@@ -212,7 +201,7 @@ impl ModelDrawer {
         })
     }
 
-    fn create_mesh_vertex_buffer(&self, mesh: &model::Mesh, device: &wgpu::Device) -> wgpu::Buffer {
+    fn create_vertex_buffer(&self, mesh: &model::Mesh, device: &wgpu::Device) -> wgpu::Buffer {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&mesh.vertices),
             usage: wgpu::BufferUsage::VERTEX,
@@ -396,15 +385,14 @@ impl ModelDrawer {
     fn draw_model_instanced<'a: 'b, 'b>(
         &'a self,
         render_pass: &'b mut RenderPass<'a>,
-        model: &InternalModel,
-        instances: &Range<u32>,
+        internal_model: &InternalModel,
     ) {
-        for internal_mesh in model.internal_meshes.iter() {
+        for internal_mesh in internal_model.internal_meshes.iter() {
             self.draw_mesh_instanced(
                 render_pass,
                 internal_mesh,
-                self.uniform_bind_group_registry.get(&model.id).unwrap(),
-                instances.clone(),
+                self.uniform_bind_group_registry.get(&internal_model.id).unwrap(),
+                0..internal_model.num_of_instances as u32,
             );
         }
     }
@@ -412,29 +400,29 @@ impl ModelDrawer {
     fn draw_mesh_instanced<'a: 'b, 'b>(
         &'a self,
         render_pass: &'b mut RenderPass<'a>,
-        mesh: &InternalMesh,
+        internal_mesh: &InternalMesh,
         uniform_bind_group: &'a wgpu::BindGroup,
         instances: Range<u32>,
     ) {
-        let vertex_buffer = self.vertex_buffer_registry.get(&mesh.id).unwrap();
-        let index_buffer = self.index_buffer_registry.get(&mesh.id).unwrap();
+        let vertex_buffer = self.vertex_buffer_registry.get(&internal_mesh.id).unwrap();
+        let index_buffer = self.index_buffer_registry.get(&internal_mesh.id).unwrap();
         let material_bind_group = self
             .material_bind_group_registry
-            .get(&mesh.material_id).unwrap();
+            .get(&internal_mesh.material_id).unwrap();
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, uniform_bind_group, &[]);
         render_pass.set_bind_group(1, material_bind_group, &[]);
         render_pass.set_bind_group(2, &self.light_bind_group, &[]);
-        render_pass.draw_indexed(0..mesh.count as u32, 0, instances);
+        render_pass.draw_indexed(0..internal_mesh.count as u32, 0, instances);
     }
 }
 
 impl render::Drawer for ModelDrawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
-        for (_, model) in self.models.iter() {
-            self.draw_model_instanced(render_pass, &model, &(0..model.num_of_instances as u32));
+        for (_, internal_model) in self.models.iter() {
+            self.draw_model_instanced(render_pass, &internal_model);
         }
     }
 }

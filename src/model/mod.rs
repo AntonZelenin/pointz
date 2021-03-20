@@ -1,8 +1,12 @@
-use crate::texture;
-use anyhow::*;
-use iced_wgpu::wgpu;
 use std::path::Path;
+use anyhow::*;
+use cgmath::{Vector2, Vector3, Zero};
+use iced_wgpu::wgpu;
 use crate::app::IndexDriver;
+use crate::texture;
+use crate::model::primitives::{Primitive, bounding_sphere};
+
+pub mod primitives;
 
 // todo move to render?
 pub trait Vertex {
@@ -69,15 +73,27 @@ pub struct Mesh {
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct ModelVertex {
-    pub position: cgmath::Vector3<f32>,
-    tex_coords: cgmath::Vector2<f32>,
-    normal: cgmath::Vector3<f32>,
-    tangent: cgmath::Vector3<f32>,
-    bitangent: cgmath::Vector3<f32>,
+    pub position: Vector3<f32>,
+    pub tex_coords: Vector2<f32>,
+    pub normal: Vector3<f32>,
+    pub tangent: Vector3<f32>,
+    pub bitangent: Vector3<f32>,
 }
 
 unsafe impl bytemuck::Pod for ModelVertex {}
 unsafe impl bytemuck::Zeroable for ModelVertex {}
+
+impl Default for ModelVertex {
+    fn default() -> Self {
+        Self {
+            position: Vector3::zero(),
+            tex_coords: Vector2::zero(),
+            normal: Vector3::zero(),
+            tangent: Vector3::zero(),
+            bitangent: Vector3::zero(),
+        }
+    }
+}
 
 impl Vertex for ModelVertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
@@ -228,5 +244,17 @@ impl Loader {
             meshes,
             materials
         })
+    }
+
+    pub fn load_primitive(&mut self, primitive: Primitive) -> Model {
+        match primitive {
+            Primitive::BoundingSphere => {
+                Model {
+                    id: self.index_driver.next_id(),
+                    meshes: vec![bounding_sphere::get_mesh()],
+                    materials: vec![],
+                }
+            },
+        }
     }
 }
