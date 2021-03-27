@@ -4,13 +4,14 @@ use crate::texture::TextureType;
 use crate::{model, texture};
 use crate::model::{ModelVertex, Vertex};
 use crate::app::IndexDriver;
-use crate::scene::manager::Object;
+use crate::scene::manager::{Object, RawTransform};
 use crate::renderer::render::{InternalModel, InternalMesh};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::RenderPass;
 use std::ops::Range;
 use std::collections::HashMap;
+use crate::renderer::buffer::DynamicBuffer;
 
 pub struct ModelDrawer {
     index_driver: IndexDriver,
@@ -21,7 +22,7 @@ pub struct ModelDrawer {
     uniform_bind_group_registry: HashMap<usize, wgpu::BindGroup>,
     vertex_buffer_registry: HashMap<usize, wgpu::Buffer>,
     index_buffer_registry: HashMap<usize, wgpu::Buffer>,
-    instance_buffer_registry: HashMap<usize, wgpu::Buffer>,
+    instance_buffer_registry: HashMap<usize, DynamicBuffer<RawTransform>>,
     uniform_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_group_layout: wgpu::BindGroupLayout,
 }
@@ -122,13 +123,13 @@ impl ModelDrawer {
                 material_id,
             });
         }
-        let instance_buffer = self.create_instance_buffer(&vec![], device);
-        self.uniform_bind_group_registry.insert(
-            model.id,
-            self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer),
-        );
+        let instance_buffer = self.create_instance_buffer(&vec![], device, queue);
         self.instance_buffer_registry
             .insert(model.id, instance_buffer);
+        self.uniform_bind_group_registry.insert(
+            model.id,
+            self.create_model_uniform_bind_group(model.id, device, uniform_buffer),
+        );
         self.models.insert(model.id, InternalModel {
             id: model.id,
             num_of_instances: 0,
@@ -142,11 +143,23 @@ impl ModelDrawer {
         objects: &Vec<&Object>,
         device: &wgpu::Device,
         uniform_buffer: &wgpu::Buffer,
+        queue: &wgpu::Queue
     ) {
-        // todo allocate large buffer for instances so that you'll need to reallocate it only when it's exceeded
-        let instance_buffer = self.create_instance_buffer(objects, device);
-        *self.uniform_bind_group_registry.get_mut(&model_id).unwrap() = self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer);
-        *self.instance_buffer_registry.get_mut(&model_id).unwrap() = instance_buffer;
+        {
+            let instance_buffer = self.instance_buffer_registry.get_mut(&model_id).unwrap();
+            // let instance_buffer = self.create_instance_buffer(objects, device, queue);
+            let instance_data = objects
+                .iter()
+                .map(|object| object.get_raw_transform())
+                .collect::<Vec<_>>();
+            let mut encoder = device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
+            instance_buffer.append(device, &mut encoder, queue, bytemuck::cast_slice(&instance_data));
+        }
+        *self.uniform_bind_group_registry.get_mut(&model_id).unwrap() = self.create_model_uniform_bind_group(model_id, device, uniform_buffer);
+        // *self.instance_buffer_registry.get_mut(&model_id).unwrap() = instance_buffer;
         let model = self.models.get_mut(&model_id).unwrap();
         model.num_of_instances = objects.len();
     }
@@ -155,16 +168,24 @@ impl ModelDrawer {
         &mut self,
         objects: &Vec<&Object>,
         device: &wgpu::Device,
-    ) -> wgpu::Buffer {
+        queue: &wgpu::Queue
+    ) -> DynamicBuffer<RawTransform> {
         let instance_data = objects
             .iter()
             .map(|object| object.get_raw_transform())
             .collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
-            label: Some("instance buffer"),
-        });
+        // todo 4, change or comment
+        let mut instance_buffer: DynamicBuffer<RawTransform> = DynamicBuffer::with_capacity(device, 4 + instance_data.len() * 2, wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST| wgpu::BufferUsage::COPY_SRC);
+        let mut encoder = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+        instance_buffer.append(
+            device,
+            &mut encoder,
+            queue,
+            bytemuck::cast_slice(&instance_data)
+        );
         instance_buffer
     }
 
@@ -173,7 +194,7 @@ impl ModelDrawer {
         let bytes: &[u8] = bytemuck::cast_slice(&transform);
         let offset = (object.instance_id * bytes.len()) as u64;
         queue.write_buffer(
-            self.instance_buffer_registry.get(&object.model_id).unwrap(),
+            self.instance_buffer_registry.get(&object.model_id).unwrap().get_buffer(),
             offset,
             bytes,
         );
@@ -267,10 +288,11 @@ impl ModelDrawer {
 
     fn create_model_uniform_bind_group(
         &self,
-        instance_buffer: &wgpu::Buffer,
+        model_id: usize,
         device: &wgpu::Device,
         uniform_buffer: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
+        let instance_buffer = self.instance_buffer_registry.get(&model_id).unwrap();
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.uniform_bind_group_layout,
             entries: &[
@@ -285,7 +307,7 @@ impl ModelDrawer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Buffer {
-                        buffer: instance_buffer,
+                        buffer: instance_buffer.get_buffer(),
                         offset: 0,
                         size: None,
                     },

@@ -151,6 +151,7 @@ impl RenderingState {
             instances,
             &self.device,
             &self.uniform_buffer,
+            &self.queue
         );
     }
 
@@ -165,7 +166,7 @@ impl RenderingState {
     }
 
     pub fn add_bounding_sphere_instances(&mut self, bounding_model_id: usize, sphere_instances: &Vec<&Object>) {
-        self.bounding_spheres_drawer.as_mut().unwrap().add_instances(bounding_model_id,sphere_instances, &self.device, &self.uniform_buffer);
+        self.bounding_spheres_drawer.as_mut().unwrap().add_instances(bounding_model_id,sphere_instances, &self.device, &self.uniform_buffer, &self.queue);
     }
 
     // todo add update all method?

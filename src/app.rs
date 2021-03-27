@@ -96,8 +96,8 @@ impl App {
     }
 
     fn add_objects(&mut self) {
-        self.scene_manager.add_model(self.model_loader.load(MODELS[0]).unwrap());
-        self.scene_manager.add_model(self.model_loader.load(MODELS[1]).unwrap());
+        let t = self.scene_manager.add_model(self.model_loader.load(MODELS[0]).unwrap());
+        let tt = self.scene_manager.add_model(self.model_loader.load(MODELS[1]).unwrap());
         let bounding_model_id = self.scene_manager.add_model(self.model_loader.load_primitive(MODELS[2]).unwrap());
         let mut i: i32 = -1;
         let bounding_sphere = self.scene_manager.get_model(bounding_model_id);
