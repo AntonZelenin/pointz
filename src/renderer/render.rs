@@ -4,7 +4,6 @@ use crate::renderer::model::ModelDrawer;
 use crate::model::{SimpleVertex, Model};
 use crate::texture::Texture;
 use crate::{renderer, model, texture};
-use crate::renderer::bounding_sphere_2::BoundingSpheresDrawer2;
 use crate::editor::GUI;
 use crate::scene::manager::Object;
 use iced_wgpu::wgpu;
@@ -24,7 +23,7 @@ pub trait Drawer {
 pub struct InternalMesh {
     pub id: usize,
     pub count: usize,
-    pub material_id: usize,
+    pub material_id: Option<usize>,
 }
 
 pub struct InternalModel {
@@ -46,7 +45,7 @@ pub struct RenderingState {
     pub last_render_time: Instant,
     model_drawer: ModelDrawer,
     debug_drawer: DebugDrawer,
-    bounding_spheres_drawer: Option<BoundingSpheresDrawer2>,
+    bounding_spheres_drawer: Option<ModelDrawer>,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -97,7 +96,7 @@ impl RenderingState {
             label: Some("uniform buffer"),
         });
 
-        let model_drawer = ModelDrawer::new(&device);
+        let model_drawer = ModelDrawer::new(&device, wgpu::PrimitiveTopology::TriangleList);
         let debug_drawer = DebugDrawer::new(&device, &uniform_buffer);
         let viewport = iced_wgpu::Viewport::with_physical_size(
             iced::Size::new(size.width, size.height),
@@ -133,6 +132,15 @@ impl RenderingState {
         )
     }
 
+    pub fn init_bounding_sphere_model(&mut self, model: &Model) {
+        self.bounding_spheres_drawer.as_mut().unwrap().init_model(
+            model,
+            &self.device,
+            &self.queue,
+            &self.uniform_buffer,
+        )
+    }
+
     pub fn add_instances(
         &mut self,
         model: &model::Model,
@@ -148,13 +156,16 @@ impl RenderingState {
 
     pub fn init_bounding_sphere(&mut self, model: &Model) {
         match &mut self.bounding_spheres_drawer {
-            None => self.bounding_spheres_drawer = Some(BoundingSpheresDrawer2::new(&self.device, model)),
-            _ => {}
+            None => {
+                self.bounding_spheres_drawer = Some(ModelDrawer::new(&self.device, wgpu::PrimitiveTopology::LineList));
+                self.init_bounding_sphere_model(model);
+            },
+            _ => {panic!("Bounding sphere already initialized")}
         }
     }
 
-    pub fn add_bounding_sphere_instances(&mut self, model: &Model, sphere_instances: &Vec<&Object>) {
-        self.bounding_spheres_drawer.as_mut().unwrap().add(model, sphere_instances, &self.device, &self.uniform_buffer);
+    pub fn add_bounding_sphere_instances(&mut self, bounding_model_id: usize, sphere_instances: &Vec<&Object>) {
+        self.bounding_spheres_drawer.as_mut().unwrap().add_instances(bounding_model_id,sphere_instances, &self.device, &self.uniform_buffer);
     }
 
     // todo add update all method?
@@ -213,7 +224,9 @@ impl RenderingState {
             // todo if I comment model renderer get frame will fail with timeout
             self.model_drawer.draw(&mut render_pass);
             self.debug_drawer.draw(&mut render_pass);
-            // self.bounding_spheres_drawer.draw(&mut render_pass);
+            if let Some(bounding_spheres_drawer) = &self.bounding_spheres_drawer {
+                bounding_spheres_drawer.draw(&mut render_pass);
+            }
         }
 
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);

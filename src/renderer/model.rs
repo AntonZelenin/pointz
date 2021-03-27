@@ -27,7 +27,7 @@ pub struct ModelDrawer {
 }
 
 impl ModelDrawer {
-    pub fn new(device: &wgpu::Device) -> ModelDrawer {
+    pub fn new(device: &wgpu::Device, primitive_topology: wgpu::PrimitiveTopology) -> ModelDrawer {
         let uniform_bind_group_layout = <ModelDrawer>::create_uniform_bind_group_layout(device);
         let texture_bind_group_layout = <ModelDrawer>::create_texture_bind_group_layout(device);
         let light_bind_group_layout = <ModelDrawer>::create_light_bind_group_layout(device);
@@ -46,7 +46,7 @@ impl ModelDrawer {
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.vert.spv"));
             let fs_module =
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.frag.spv"));
-            render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module, ModelVertex::desc(), wgpu::PrimitiveTopology::TriangleList)
+            render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module, ModelVertex::desc(), primitive_topology)
         };
         let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
         // We'll want to update our lights position, so we use COPY_DST
@@ -110,7 +110,12 @@ impl ModelDrawer {
                 .insert(mesh_id, self.create_mesh_index_buffer(&mesh, device));
             self.vertex_buffer_registry
                 .insert(mesh_id, self.create_vertex_buffer(mesh, device));
-            let material_id = material_ids[mesh.material_id];
+            // todo do I need it? or I can return as it was
+            let material_id = if material_ids.len() == 0 {
+                None
+            } else {
+                Some(material_ids[mesh.material_id])
+            };
             internal_meshes.push(InternalMesh {
                 count: mesh.indices.len(),
                 id: mesh_id,
@@ -155,9 +160,8 @@ impl ModelDrawer {
             .iter()
             .map(|object| object.get_raw_transform())
             .collect::<Vec<_>>();
-        let t = bytemuck::cast_slice(&instance_data);
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            contents: t,
+            contents: bytemuck::cast_slice(&instance_data),
             usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
             label: Some("instance buffer"),
         });
@@ -406,13 +410,15 @@ impl ModelDrawer {
     ) {
         let vertex_buffer = self.vertex_buffer_registry.get(&internal_mesh.id).unwrap();
         let index_buffer = self.index_buffer_registry.get(&internal_mesh.id).unwrap();
-        let material_bind_group = self
-            .material_bind_group_registry
-            .get(&internal_mesh.material_id).unwrap();
+        if let Some(material_id) = internal_mesh.material_id {
+            let material_bind_group = self
+                .material_bind_group_registry
+                .get(&material_id).unwrap();
+            render_pass.set_bind_group(1, material_bind_group, &[]);
+        }
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, uniform_bind_group, &[]);
-        render_pass.set_bind_group(1, material_bind_group, &[]);
         render_pass.set_bind_group(2, &self.light_bind_group, &[]);
         render_pass.draw_indexed(0..internal_mesh.count as u32, 0, instances);
     }

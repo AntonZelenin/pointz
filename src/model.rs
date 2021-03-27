@@ -4,9 +4,6 @@ use cgmath::{Vector2, Vector3, Zero};
 use iced_wgpu::wgpu;
 use crate::app::IndexDriver;
 use crate::texture;
-use crate::model::primitives::{Primitive, bounding_sphere};
-
-pub mod primitives;
 
 // todo move to render?
 pub trait Vertex {
@@ -21,6 +18,7 @@ pub struct SimpleVertex {
 }
 
 unsafe impl bytemuck::Pod for SimpleVertex {}
+
 unsafe impl bytemuck::Zeroable for SimpleVertex {}
 
 impl Vertex for SimpleVertex {
@@ -81,6 +79,7 @@ pub struct ModelVertex {
 }
 
 unsafe impl bytemuck::Pod for ModelVertex {}
+
 unsafe impl bytemuck::Zeroable for ModelVertex {}
 
 impl Default for ModelVertex {
@@ -165,6 +164,20 @@ impl Loader {
         for m in obj_models {
             let mut vertices = Vec::new();
             for i in 0..m.mesh.positions.len() / 3 {
+                let tex_coords: Vector2<f32> = if m.mesh.texcoords.len() == 0 {
+                    Vector2::new(0.0, 0.0)
+                } else {
+                    Vector2::new(m.mesh.texcoords[i * 2], m.mesh.texcoords[i * 2 + 1])
+                };
+                let normal: Vector3<f32> = if m.mesh.normals.len() == 0 {
+                    Vector3::new(1.0, 1.0, 1.0)
+                } else {
+                    Vector3::new(
+                        m.mesh.normals[i * 3],
+                        m.mesh.normals[i * 3 + 1],
+                        m.mesh.normals[i * 3 + 2],
+                    )
+                };
                 vertices.push(ModelVertex {
                     position: [
                         m.mesh.positions[i * 3],
@@ -172,13 +185,15 @@ impl Loader {
                         m.mesh.positions[i * 3 + 2],
                     ]
                         .into(),
-                    tex_coords: [m.mesh.texcoords[i * 2], m.mesh.texcoords[i * 2 + 1]].into(),
-                    normal: [
-                        m.mesh.normals[i * 3],
-                        m.mesh.normals[i * 3 + 1],
-                        m.mesh.normals[i * 3 + 2],
-                    ]
-                        .into(),
+                    // tex_coords: [m.mesh.texcoords[i * 2], m.mesh.texcoords[i * 2 + 1]].into(),
+                    tex_coords,
+                    // normal: [
+                    //     m.mesh.normals[i * 3],
+                    //     m.mesh.normals[i * 3 + 1],
+                    //     m.mesh.normals[i * 3 + 2],
+                    // ]
+                    //     .into(),
+                    normal,
                     tangent: [0.0; 3].into(),
                     bitangent: [0.0; 3].into(),
                 });
@@ -242,19 +257,59 @@ impl Loader {
         Ok(Model {
             id: self.index_driver.next_id(),
             meshes,
-            materials
+            materials,
         })
     }
 
-    pub fn load_primitive(&mut self, primitive: Primitive) -> Model {
-        match primitive {
-            Primitive::BoundingSphere => {
-                Model {
-                    id: self.index_driver.next_id(),
-                    meshes: vec![bounding_sphere::get_mesh()],
-                    materials: vec![],
-                }
-            },
+    pub fn load_primitive<P: AsRef<Path>>(&mut self, path: P) -> Result<Model> {
+        let (obj_models, obj_materials) = tobj::load_obj(path.as_ref(), true)?;
+
+        // We're assuming that the texture files are stored with the obj file
+        let containing_folder = path.as_ref().parent().unwrap();
+
+        let mut materials = Vec::new();
+        for mat in obj_materials {
+            let diffuse_path = mat.diffuse_texture;
+            let diffuse_texture =
+                texture::Texture::load(containing_folder.join(diffuse_path), false)?;
+
+            let normal_path = mat.normal_texture;
+            let normal_texture = texture::Texture::load(containing_folder.join(normal_path), true)?;
+
+            materials.push(Material::new(&mat.name, diffuse_texture, normal_texture));
         }
+
+        let mut meshes = Vec::new();
+        for m in obj_models {
+            let mut vertices = Vec::new();
+            for i in 0..m.mesh.positions.len() / 3 {
+                let tex_coords: Vector2<f32> = Vector2::new(0.0, 0.0);
+                let normal: Vector3<f32> = Vector3::new(1.0, 1.0, 1.0);
+                vertices.push(ModelVertex {
+                    position: [
+                        m.mesh.positions[i * 3],
+                        m.mesh.positions[i * 3 + 1],
+                        m.mesh.positions[i * 3 + 2],
+                    ]
+                        .into(),
+                    tex_coords,
+                    normal,
+                    tangent: [0.0; 3].into(),
+                    bitangent: [0.0; 3].into(),
+                });
+            }
+            meshes.push(Mesh {
+                name: m.name,
+                vertices,
+                indices: m.mesh.indices,
+                material_id: m.mesh.material_id.unwrap_or(0),
+            });
+        }
+
+        Ok(Model {
+            id: self.index_driver.next_id(),
+            meshes,
+            materials,
+        })
     }
 }

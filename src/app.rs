@@ -1,19 +1,20 @@
 use crate::camera::CameraState;
 use crate::renderer::render::RenderingState;
-use crate::model::SimpleVertex;
+use crate::model::{SimpleVertex, Model};
 use crate::texture::Texture;
 use crate::{renderer, editor, event, model, scene};
 use crate::scene::manager::{Manager, NUM_ROWS, NUM_INSTANCES_PER_ROW, INSTANCE_DISPLACEMENT};
 use cgmath::prelude::*;
-use cgmath::{Deg, Quaternion, Rad, Vector3, Vector4};
+use cgmath::{Deg, Quaternion, Vector3, Vector4};
 use iced_wgpu::wgpu;
 use iced_winit::winit::event_loop::EventLoop;
 use iced_winit::winit::window::{Window, WindowBuilder};
 use glam::Vec3A;
 use std::collections::HashMap;
-use crate::model::primitives::Primitive;
+use ordered_float::OrderedFloat;
+use cgmath::num_traits::Pow;
 
-const MODELS: [&str; 2] = ["resources/penguin.obj", "resources/cube.obj"];
+const MODELS: [&str; 3] = ["resources/penguin.obj", "resources/cube.obj", "resources/sphere.obj"];
 
 pub struct IndexDriver {
     current_index: usize,
@@ -97,28 +98,26 @@ impl App {
     fn add_objects(&mut self) {
         self.scene_manager.add_model(self.model_loader.load(MODELS[0]).unwrap());
         self.scene_manager.add_model(self.model_loader.load(MODELS[1]).unwrap());
-        let bounding_model_id = self.scene_manager.add_model(self.model_loader.load_primitive(Primitive::BoundingSphere));
+        let bounding_model_id = self.scene_manager.add_model(self.model_loader.load_primitive(MODELS[2]).unwrap());
         let mut i: i32 = -1;
+        let bounding_sphere = self.scene_manager.get_model(bounding_model_id);
+        self.rendering.init_bounding_sphere(&bounding_sphere);
         for model_id in self.scene_manager.get_model_ids().iter() {
             if *model_id == bounding_model_id {
                 continue;
             }
             i += 1;
-            {
-                self.add_instances(i, *model_id);
-                self.add_bounding_sphere_instances(*model_id, bounding_model_id);
-            }
+            self.create_instances(i, *model_id);
+            self.create_bounding_sphere_instances(*model_id, bounding_model_id);
             let model = self.scene_manager.get_model(*model_id);
             self.rendering.init_model(&model);
             self.rendering.add_instances(&model, &self.scene_manager.get_model_instances(model.id));
 
-            let bounding_sphere = self.scene_manager.get_model(bounding_model_id);
-            self.rendering.init_bounding_sphere(&bounding_sphere);
-            self.rendering.add_bounding_sphere_instances(&model, &self.scene_manager.get_model_instances(bounding_model_id));
+            self.rendering.add_bounding_sphere_instances(bounding_model_id, &self.scene_manager.get_model_instances(bounding_model_id));
         }
     }
 
-    fn add_instances(&mut self, i: i32, model_id: usize) {
+    fn create_instances(&mut self, i: i32, model_id: usize) {
         let mut transforms = (0..NUM_ROWS)
             .flat_map(|z| {
                 (0..NUM_INSTANCES_PER_ROW).map(move |x| {
@@ -140,7 +139,7 @@ impl App {
                     scene::manager::Transform {
                         position,
                         rotation,
-                        scale: Vec3A::new(1.0, 1.0, 1.0),
+                        scale: Vector3::new(1.0, 1.0, 1.0),
                     }
                 })
             })
@@ -150,10 +149,15 @@ impl App {
         }
     }
 
-    fn add_bounding_sphere_instances(&mut self, model_id: usize, bounding_sphere_id: usize) {
+    fn create_bounding_sphere_instances(&mut self, model_id: usize, bounding_sphere_id: usize) {
+        let model = self.scene_manager.get_model(model_id);
+        let radius = calc_bounding_sphere_radius(model);
+
         let mut transforms = vec![];
         for object in self.scene_manager.get_model_instances(model_id) {
-            transforms.push(object.transform.clone());
+            let mut transform = object.transform.clone();
+            transform.scale *= radius;
+            transforms.push(transform);
         }
         for transform in transforms {
             self.scene_manager.create_object(bounding_sphere_id, transform);
@@ -258,4 +262,19 @@ impl App {
     pub fn render(&mut self) {
         self.rendering.render(&self.window);
     }
+}
+
+// todo move
+fn calc_bounding_sphere_radius(model: &model::Model) -> f32 {
+    let mut lengths: Vec<OrderedFloat<f32>> = vec![];
+    for mesh in model.meshes.iter() {
+        lengths = mesh.vertices.iter().map(|vertex| {
+            // todo move to a math lib? or it already exists?
+            // we measure the distance between the model space 0,0,0 and a vertex, so vertex vector will always be the same as it's coords
+            let length: f32 = vertex.position.x.pow(2) + vertex.position.y.pow(2) + vertex.position.z.pow(2);
+            OrderedFloat(length.sqrt())
+        }).collect();
+    }
+    let max = lengths.iter().max().unwrap().into_inner();
+    max
 }

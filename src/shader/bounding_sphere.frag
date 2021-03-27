@@ -1,19 +1,12 @@
 #version 450
 
-layout(location=0) in vec3 position;
+layout(location=0) in vec4 position;
 
 layout(location=0) out vec4 outColor;
 
 layout(set=0, binding=0)
 uniform Resolution {
     vec2 u_resolution;
-};
-
-// todo I need to multiply every instance by transform, kinda
-layout(set=0, binding=1)
-buffer Transform {
-    vec3 center;
-    float radius;
 };
 
 vec4 draw_circle(float radius, vec2 center) {
@@ -27,6 +20,6 @@ vec4 draw_circle(float radius, vec2 center) {
 }
 
 void main() {
-//    outColor = draw_circle(radius, position.xy);
-    outColor = vec4(1.0);
+    outColor = draw_circle(1.5, position.xy);
+//    outColor = vec4(1.0);
 }

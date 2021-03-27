@@ -1,42 +1,29 @@
 use crate::renderer::render;
-use crate::{model};
-use crate::model::{Vertex, SimpleVertex, Model};
+use crate::{model, texture};
+use crate::model::{Vertex, ModelVertex, Model};
 use crate::app::IndexDriver;
-use crate::scene::manager::Object;
+use crate::scene::manager::{Object, RawTransform};
 use crate::renderer::render::{InternalModel, InternalMesh};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
-use iced_wgpu::wgpu::RenderPass;
+use iced_wgpu::wgpu::{RenderPass, PipelineLayout, ShaderModule};
 use std::ops::Range;
 use std::collections::HashMap;
 use ordered_float::OrderedFloat;
 use cgmath::num_traits::Pow;
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-struct Transform {
-    // it has padding!
-    // position: Vec3A,
-    center: [f32; 3],
-    radius: f32,
-}
-
-unsafe impl bytemuck::Pod for Transform {}
-unsafe impl bytemuck::Zeroable for Transform {}
-
-pub struct BoundingSpheresDrawer2 {
-    index_driver: IndexDriver,
+pub struct BoundingSpheresDrawer {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer_registry: HashMap<usize, wgpu::Buffer>,
     index_buffer_registry: HashMap<usize, wgpu::Buffer>,
     internal_model: InternalModel,
-    uniform_bind_group_registry: HashMap<usize, wgpu::BindGroup>,
-    instance_buffer_registry: HashMap<usize, wgpu::Buffer>,
+    uniform_bind_group: Option<wgpu::BindGroup>,
+    instance_buffer: Option<wgpu::Buffer>,
     uniform_bind_group_layout: wgpu::BindGroupLayout,
 }
 
-impl BoundingSpheresDrawer2 {
-    pub fn new(device: &wgpu::Device, model: &Model) -> BoundingSpheresDrawer2 {
+impl BoundingSpheresDrawer {
+    pub fn new(device: &wgpu::Device, model: &Model) -> BoundingSpheresDrawer {
         let uniform_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -52,7 +39,7 @@ impl BoundingSpheresDrawer2 {
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        visibility: wgpu::ShaderStage::VERTEX,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
@@ -73,7 +60,9 @@ impl BoundingSpheresDrawer2 {
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/bounding_sphere.vert.spv"));
             let fs_module =
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/bounding_sphere.frag.spv"));
-            render::build_render_pipeline(device, &layout, vs_module, fs_module, SimpleVertex::desc(), wgpu::PrimitiveTopology::TriangleList)
+            // todo it's easy to set wrong vertex_buffer_layout (I used SimpleVertex instead of ModelVertex) and the code will not fail but work incorrectly
+            // todo and it will be hard to find why
+            build_render_pipeline(device, &layout, vs_module, fs_module, ModelVertex::desc(), wgpu::PrimitiveTopology::TriangleList)
         };
 
         let mut index_driver = IndexDriver::new();
@@ -83,13 +72,13 @@ impl BoundingSpheresDrawer2 {
         for mesh in model.meshes.iter() {
             let mesh_id = index_driver.next_id();
             index_buffer_registry
-                .insert(mesh_id, <BoundingSpheresDrawer2>::create_mesh_index_buffer(&mesh, device));
+                .insert(mesh_id, <BoundingSpheresDrawer>::create_mesh_index_buffer(&mesh, device));
             vertex_buffer_registry
-                .insert(mesh_id, <BoundingSpheresDrawer2>::create_vertex_buffer(mesh, device));
+                .insert(mesh_id, <BoundingSpheresDrawer>::create_vertex_buffer(mesh, device));
             internal_meshes.push(InternalMesh {
                 count: mesh.indices.len(),
                 id: mesh_id,
-                material_id: 0,
+                material_id: Some(0),
             });
         }
         let internal_model = InternalModel {
@@ -98,48 +87,28 @@ impl BoundingSpheresDrawer2 {
             internal_meshes,
         };
 
-        BoundingSpheresDrawer2 {
-            index_driver,
+        BoundingSpheresDrawer {
             render_pipeline,
-            uniform_bind_group_registry: HashMap::new(),
+            uniform_bind_group: None,
             vertex_buffer_registry,
             index_buffer_registry,
-            instance_buffer_registry: HashMap::new(),
+            instance_buffer: None,
             uniform_bind_group_layout,
             internal_model,
         }
     }
 
-    pub fn add(&mut self, model: &model::Model, sphere_instances: &Vec<&Object>, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) {
-        let mut transforms: Vec<Transform> = vec![];
-        for instance in sphere_instances.iter() {
-            transforms.push(Transform {
-                center: [instance.transform.position.x, instance.transform.position.y, instance.transform.position.z],
-                radius: calc_bounding_sphere_radius(&model),
-            });
-        }
-        // todo should I drop existing buffer?
+    pub fn add(&mut self, sphere_instances: &Vec<&Object>, device: &wgpu::Device, uniform_buffer: &wgpu::Buffer) {
+        let transforms: Vec<RawTransform> = sphere_instances.iter().map(|i| i.get_raw_transform()).collect();
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&transforms),
-            usage: wgpu::BufferUsage::STORAGE,
+            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
             label: Some("bounding sphere transform buffer"),
         });
-        // todo should I drop existing?
-        self.uniform_bind_group_registry.insert(model.id, self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer));
-    }
-
-    fn create_instance_buffer(objects: &Vec<&Object>, device: &wgpu::Device, ) -> wgpu::Buffer {
-        let instance_data = objects
-            .iter()
-            .map(|object| object.get_raw_transform())
-            .collect::<Vec<_>>();
-        let t = bytemuck::cast_slice(&instance_data);
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            contents: t,
-            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
-            label: Some("instance buffer"),
-        });
-        instance_buffer
+        // todo should I drop existing buffer?
+        self.uniform_bind_group = Some(self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer));
+        self.internal_model.num_of_instances += sphere_instances.len();
+        self.instance_buffer = Some(instance_buffer);
     }
 
     pub fn update_object(&mut self, object: &Object, queue: &wgpu::Queue) {
@@ -147,7 +116,7 @@ impl BoundingSpheresDrawer2 {
         let bytes: &[u8] = bytemuck::cast_slice(&transform);
         let offset = (object.instance_id * bytes.len()) as u64;
         queue.write_buffer(
-            self.instance_buffer_registry.get(&object.model_id).unwrap(),
+            self.instance_buffer.as_ref().unwrap(),
             offset,
             bytes,
         );
@@ -208,8 +177,9 @@ impl BoundingSpheresDrawer2 {
             self.draw_mesh_instanced(
                 render_pass,
                 internal_mesh,
-                self.uniform_bind_group_registry.get(&internal_model.id).unwrap(),
-                0..internal_model.num_of_instances as u32,
+                self.uniform_bind_group.as_ref().unwrap(),
+                // 0..internal_model.num_of_instances as u32,
+                0..25,
             );
         }
     }
@@ -228,12 +198,21 @@ impl BoundingSpheresDrawer2 {
         render_pass.set_bind_group(0, uniform_bind_group, &[]);
         render_pass.draw_indexed(0..internal_mesh.count as u32, 0, instances);
     }
+
+    fn is_empty(&self) -> bool {
+        if let Some(_) = &self.uniform_bind_group {
+            return false;
+        }
+        return true;
+    }
 }
 
-impl render::Drawer for BoundingSpheresDrawer2 {
+impl render::Drawer for BoundingSpheresDrawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
-        render_pass.set_pipeline(&self.render_pipeline);
-        self.draw_model_instanced(render_pass, &self.internal_model);
+        if !self.is_empty() {
+            render_pass.set_pipeline(&self.render_pipeline);
+            self.draw_model_instanced(render_pass, &self.internal_model);
+        }
     }
 }
 
@@ -249,4 +228,53 @@ fn calc_bounding_sphere_radius(model: &model::Model) -> f32 {
     }
     let max = lengths.iter().max().unwrap().into_inner();
     max
+}
+
+pub fn build_render_pipeline(
+    device: &wgpu::Device,
+    render_pipeline_layout: &PipelineLayout,
+    vs_module: ShaderModule,
+    fs_module: ShaderModule,
+    vertex_buffer_layout: wgpu::VertexBufferLayout,
+    topology: wgpu::PrimitiveTopology,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("main"),
+        layout: Some(render_pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &vs_module,
+            entry_point: "main",
+            buffers: &[vertex_buffer_layout],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &fs_module,
+            entry_point: "main",
+            targets: &[wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                color_blend: wgpu::BlendState::REPLACE,
+                alpha_blend: wgpu::BlendState::REPLACE,
+                write_mask: wgpu::ColorWrite::ALL,
+            }],
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: wgpu::CullMode::None,
+            strip_index_format: None,
+            polygon_mode: wgpu::PolygonMode::Fill,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: texture::DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil: wgpu::StencilState::default(),
+            bias: Default::default(),
+            clamp_depth: false,
+        }),
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+    })
 }

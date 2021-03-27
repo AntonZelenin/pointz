@@ -24,7 +24,9 @@ pub struct Object {
 impl Object {
     pub fn get_raw_transform(&self) -> RawTransform {
         RawTransform {
-            transform: Matrix4::from_translation(self.transform.position) * Matrix4::from(self.transform.rotation),
+            transform: Matrix4::from_translation(self.transform.position)
+                * Matrix4::from(self.transform.rotation)
+                * Matrix4::from_nonuniform_scale(self.transform.scale.x, self.transform.scale.y, self.transform.scale.z)
         }
     }
 }
@@ -33,7 +35,7 @@ impl Object {
 pub struct Transform {
     pub position: Vector3<f32>,
     pub rotation: Quaternion<f32>,
-    pub scale: Vec3A,
+    pub scale: Vector3<f32>,
 }
 
 #[repr(C)]
@@ -91,7 +93,6 @@ impl Manager {
             entities: vec![],
         };
         self.object_registry.insert(id, object);
-        // todo why is it working? don't I need to init the vector?
         self.model_instances.get_mut(&model_id).unwrap().push(id);
         id
     }
