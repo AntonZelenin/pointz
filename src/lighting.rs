@@ -1,7 +1,3 @@
-use crate::model::{Mesh, Model};
-use iced_wgpu::wgpu;
-use std::ops::Range;
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Light {

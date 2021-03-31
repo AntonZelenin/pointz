@@ -1,63 +1,34 @@
-use crate::drawer::render;
-use crate::drawer::render::{MaterialHandle, MeshHandle, ObjectHandle, ResourceRegistry};
+use crate::renderer::render;
 use crate::lighting::Light;
 use crate::texture::TextureType;
-use crate::{instance, model, texture};
+use crate::{model, texture};
+use crate::model::{ModelVertex, Vertex};
+use crate::app::IndexDriver;
+use crate::scene::manager::{Object, RawTransform};
+use crate::renderer::render::{InternalModel, InternalMesh};
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::RenderPass;
 use std::ops::Range;
-
-// todo use traits to remove deps?
-
-pub struct Object {
-    pub handle: ObjectHandle,
-    pub instances: Vec<instance::Instance>,
-}
-
-struct InternalMesh {
-    handle: MeshHandle,
-    count: usize,
-    material_handle: MaterialHandle,
-}
-
-struct InternalObject {
-    handle: ObjectHandle,
-    instances: Vec<instance::Instance>,
-    internal_meshes: Vec<InternalMesh>,
-}
-
-struct IndexDriver {
-    current_index: usize,
-}
-
-impl IndexDriver {
-    pub fn new() -> IndexDriver {
-        IndexDriver { current_index: 0 }
-    }
-
-    pub fn next_id(&mut self) -> usize {
-        self.current_index += 1;
-        self.current_index
-    }
-}
+use std::collections::HashMap;
+use crate::renderer::buffer::DynamicBuffer;
 
 pub struct ModelDrawer {
     index_driver: IndexDriver,
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub light_bind_group: wgpu::BindGroup,
-    objects: Vec<InternalObject>,
-    material_bind_group_registry: ResourceRegistry<wgpu::BindGroup>,
-    uniform_bind_group_registry: ResourceRegistry<wgpu::BindGroup>,
-    vertex_buffer_registry: ResourceRegistry<wgpu::Buffer>,
-    index_buffer_registry: ResourceRegistry<wgpu::Buffer>,
-    instance_buffer_registry: ResourceRegistry<wgpu::Buffer>,
+    render_pipeline: wgpu::RenderPipeline,
+    light_bind_group: wgpu::BindGroup,
+    models: HashMap<usize, InternalModel>,
+    material_bind_group_registry: HashMap<usize, wgpu::BindGroup>,
+    uniform_bind_group_registry: HashMap<usize, wgpu::BindGroup>,
+    vertex_buffer_registry: HashMap<usize, wgpu::Buffer>,
+    index_buffer_registry: HashMap<usize, wgpu::Buffer>,
+    instance_buffer_registry: HashMap<usize, DynamicBuffer<RawTransform>>,
     uniform_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl ModelDrawer {
-    pub fn new(device: &wgpu::Device) -> ModelDrawer {
+    pub fn new(device: &wgpu::Device, primitive_topology: wgpu::PrimitiveTopology) -> ModelDrawer {
         let uniform_bind_group_layout = <ModelDrawer>::create_uniform_bind_group_layout(device);
         let texture_bind_group_layout = <ModelDrawer>::create_texture_bind_group_layout(device);
         let light_bind_group_layout = <ModelDrawer>::create_light_bind_group_layout(device);
@@ -76,9 +47,8 @@ impl ModelDrawer {
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.vert.spv"));
             let fs_module =
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.frag.spv"));
-            render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module)
+            render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module, ModelVertex::desc(), primitive_topology)
         };
-        // todo light seems like it needs to be moved to a different drawer (¬_¬)
         let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
         // We'll want to update our lights position, so we use COPY_DST
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -94,7 +64,7 @@ impl ModelDrawer {
                     buffer: &light_buffer,
                     offset: 0,
                     size: None,
-                }
+                },
             }],
             label: None,
         });
@@ -115,92 +85,116 @@ impl ModelDrawer {
             index_driver: IndexDriver::new(),
             render_pipeline,
             light_bind_group,
-            objects: vec![],
-            material_bind_group_registry: ResourceRegistry::new(),
-            uniform_bind_group_registry: ResourceRegistry::new(),
-            vertex_buffer_registry: ResourceRegistry::new(),
-            index_buffer_registry: ResourceRegistry::new(),
-            instance_buffer_registry: ResourceRegistry::new(),
+            models: HashMap::new(),
+            material_bind_group_registry: HashMap::new(),
+            uniform_bind_group_registry: HashMap::new(),
+            vertex_buffer_registry: HashMap::new(),
+            index_buffer_registry: HashMap::new(),
+            instance_buffer_registry: HashMap::new(),
             uniform_bind_group_layout,
             texture_bind_group_layout,
         }
     }
 
-    pub fn add_model(
+    pub fn init_model(
         &mut self,
-        model: model::Model,
-        instances: Vec<instance::Instance>,
+        model: &model::Model,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         uniform_buffer: &wgpu::Buffer,
-    ) -> Object {
-        let object_handle = ObjectHandle(self.index_driver.next_id());
+    ) {
         let mut internal_meshes: Vec<InternalMesh> = vec![];
-        let material_ids = self.create_material_bind_groups(&model, &device, &queue);
+        let material_ids = self.create_material_bind_groups(model, &device, &queue);
         for mesh in model.meshes.iter() {
-            let mesh_handle = MeshHandle(self.index_driver.next_id());
+            let mesh_id = self.index_driver.next_id();
             self.index_buffer_registry
-                .insert(mesh_handle.0, self.create_mesh_index_buffer(&mesh, device));
+                .insert(mesh_id, self.create_mesh_index_buffer(&mesh, device));
             self.vertex_buffer_registry
-                .insert(mesh_handle.0, self.create_mesh_vertex_buffer(mesh, device));
-            let material_handle = MaterialHandle(material_ids[mesh.material_id]);
+                .insert(mesh_id, self.create_vertex_buffer(mesh, device));
+            // todo do I need it? or I can return as it was
+            let material_id = if material_ids.len() == 0 {
+                None
+            } else {
+                Some(material_ids[mesh.material_id])
+            };
             internal_meshes.push(InternalMesh {
                 count: mesh.indices.len(),
-                handle: mesh_handle,
-                material_handle,
+                id: mesh_id,
+                material_id,
             });
         }
-        let instance_buffer = self.create_instance_buffer(&instances, device);
+        let instance_buffer = self.create_instance_buffer(&vec![], device, queue);
+        self.instance_buffer_registry
+            .insert(model.id, instance_buffer);
         self.uniform_bind_group_registry.insert(
-            object_handle.0,
-            self.create_model_uniform_bind_group(&instance_buffer, device, uniform_buffer),
+            model.id,
+            self.create_model_uniform_bind_group(model.id, device, uniform_buffer),
         );
-        self.instance_buffer_registry.insert(object_handle.0, instance_buffer);
-        self.objects.push(InternalObject {
-            handle: object_handle.clone(),
-            instances: instances.clone(),
+        self.models.insert(model.id, InternalModel {
+            id: model.id,
+            num_of_instances: 0,
             internal_meshes,
         });
-        Object {
-            handle: object_handle,
-            instances,
-        }
     }
 
-    fn create_instance_buffer(&mut self, instances: &Vec<instance::Instance>, device: &wgpu::Device) -> wgpu::Buffer {
-        let instance_data = instances
+    // todo maybe I should pass encoder here, so that if I add a lot of instances I will be able to call submit() once when all instances are added
+    // todo potentially slow place
+    pub fn add_instances(
+        &mut self,
+        model_id: usize,
+        objects: &Vec<&Object>,
+        device: &wgpu::Device,
+        uniform_buffer: &wgpu::Buffer,
+        queue: &wgpu::Queue
+    ) {
+        let instance_buffer = self.instance_buffer_registry.get_mut(&model_id).unwrap();
+        let instance_data = objects
             .iter()
-            .map(instance::Instance::to_raw)
+            .map(|object| object.get_raw_transform())
             .collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
-            label: Some("instance buffer"),
-        });
+        let encoder = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+        instance_buffer.append(device, encoder, queue, bytemuck::cast_slice(&instance_data));
+        *self.uniform_bind_group_registry.get_mut(&model_id).unwrap() = self.create_model_uniform_bind_group(model_id, device, uniform_buffer);
+        let model = self.models.get_mut(&model_id).unwrap();
+        model.num_of_instances += objects.len();
+    }
+
+    fn create_instance_buffer(
+        &mut self,
+        objects: &Vec<&Object>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue
+    ) -> DynamicBuffer<RawTransform> {
+        let instance_data = objects
+            .iter()
+            .map(|object| object.get_raw_transform())
+            .collect::<Vec<_>>();
+        // todo 4, change or comment
+        let mut instance_buffer: DynamicBuffer<RawTransform> = DynamicBuffer::with_capacity(device, 4 + instance_data.len() * 2, wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST| wgpu::BufferUsage::COPY_SRC);
+        let encoder = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+        instance_buffer.append(
+            device,
+            encoder,
+            queue,
+            bytemuck::cast_slice(&instance_data)
+        );
         instance_buffer
     }
 
-    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &instance::Instance, queue: &wgpu::Queue) {
-        let raw = vec![instance.to_raw()];
-        let bytes: &[u8] = bytemuck::cast_slice(&raw);
-        let offset = (instance_idx * bytes.len()) as u64;
+    pub fn update_object(&mut self, object: &Object, queue: &wgpu::Queue) {
+        let transform = vec![object.get_raw_transform()];
+        let bytes: &[u8] = bytemuck::cast_slice(&transform);
+        let offset = (object.instance_id * bytes.len()) as u64;
         queue.write_buffer(
-            self.instance_buffer_registry.get(handle.0),
+            self.instance_buffer_registry.get(&object.model_id).unwrap().get_buffer(),
             offset,
             bytes,
-        );
-    }
-
-    pub fn update(&mut self, object: Object, queue: &wgpu::Queue) {
-        // todo duplicate
-        let instance_data = object.instances
-            .iter()
-            .map(instance::Instance::to_raw)
-            .collect::<Vec<_>>();
-        queue.write_buffer(
-            self.instance_buffer_registry.get(object.handle.0),
-            0,
-            bytemuck::cast_slice(&instance_data),
         );
     }
 
@@ -230,7 +224,7 @@ impl ModelDrawer {
         })
     }
 
-    fn create_mesh_vertex_buffer(&self, mesh: &model::Mesh, device: &wgpu::Device) -> wgpu::Buffer {
+    fn create_vertex_buffer(&self, mesh: &model::Mesh, device: &wgpu::Device) -> wgpu::Buffer {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&mesh.vertices),
             usage: wgpu::BufferUsage::VERTEX,
@@ -292,16 +286,17 @@ impl ModelDrawer {
 
     fn create_model_uniform_bind_group(
         &self,
-        instance_buffer: &wgpu::Buffer,
+        model_id: usize,
         device: &wgpu::Device,
         uniform_buffer: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
+        let instance_buffer = self.instance_buffer_registry.get(&model_id).unwrap();
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.uniform_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer{
+                    resource: wgpu::BindingResource::Buffer {
                         buffer: uniform_buffer,
                         offset: 0,
                         size: None,
@@ -309,8 +304,8 @@ impl ModelDrawer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Buffer{
-                        buffer: instance_buffer,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: instance_buffer.get_buffer(),
                         offset: 0,
                         size: None,
                     },
@@ -337,9 +332,7 @@ impl ModelDrawer {
                     binding: 1,
                     visibility: wgpu::ShaderStage::VERTEX,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage {
-                            read_only: true,
-                        },
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -358,9 +351,7 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float {
-                            filterable: false,
-                        },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
@@ -380,9 +371,7 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float {
-                            filterable: false,
-                        },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
@@ -420,15 +409,14 @@ impl ModelDrawer {
     fn draw_model_instanced<'a: 'b, 'b>(
         &'a self,
         render_pass: &'b mut RenderPass<'a>,
-        object: &InternalObject,
-        instances: &Range<u32>,
+        internal_model: &InternalModel,
     ) {
-        for internal_mesh in object.internal_meshes.iter() {
+        for internal_mesh in internal_model.internal_meshes.iter() {
             self.draw_mesh_instanced(
                 render_pass,
                 internal_mesh,
-                self.uniform_bind_group_registry.get(object.handle.0),
-                instances.clone(),
+                self.uniform_bind_group_registry.get(&internal_model.id).unwrap(),
+                0..internal_model.num_of_instances as u32,
             );
         }
     }
@@ -436,29 +424,31 @@ impl ModelDrawer {
     fn draw_mesh_instanced<'a: 'b, 'b>(
         &'a self,
         render_pass: &'b mut RenderPass<'a>,
-        mesh: &InternalMesh,
+        internal_mesh: &InternalMesh,
         uniform_bind_group: &'a wgpu::BindGroup,
         instances: Range<u32>,
     ) {
-        let vertex_buffer = self.vertex_buffer_registry.get(mesh.handle.0);
-        let index_buffer = self.index_buffer_registry.get(mesh.handle.0);
-        let material_bind_group = self
-            .material_bind_group_registry
-            .get(mesh.material_handle.0);
+        let vertex_buffer = self.vertex_buffer_registry.get(&internal_mesh.id).unwrap();
+        let index_buffer = self.index_buffer_registry.get(&internal_mesh.id).unwrap();
+        if let Some(material_id) = internal_mesh.material_id {
+            let material_bind_group = self
+                .material_bind_group_registry
+                .get(&material_id).unwrap();
+            render_pass.set_bind_group(1, material_bind_group, &[]);
+        }
         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         render_pass.set_bind_group(0, uniform_bind_group, &[]);
-        render_pass.set_bind_group(1, material_bind_group, &[]);
         render_pass.set_bind_group(2, &self.light_bind_group, &[]);
-        render_pass.draw_indexed(0..mesh.count as u32, 0, instances);
+        render_pass.draw_indexed(0..internal_mesh.count as u32, 0, instances);
     }
 }
 
 impl render::Drawer for ModelDrawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
-        for object in self.objects.iter() {
-            self.draw_model_instanced(render_pass, &object, &(0..object.instances.len() as u32));
+        for (_, internal_model) in self.models.iter() {
+            self.draw_model_instanced(render_pass, internal_model);
         }
     }
 }

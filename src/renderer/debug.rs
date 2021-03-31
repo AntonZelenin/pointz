@@ -1,14 +1,14 @@
-use crate::drawer::render::Drawer;
-use iced_wgpu::wgpu;
-use iced_wgpu::wgpu::{RenderPass, PipelineLayout, ShaderModule};
-use iced_wgpu::wgpu::util::DeviceExt;
+use crate::renderer::render::Drawer;
 use crate::model::{SimpleVertex, Vertex};
-use crate::texture;
+use iced_wgpu::wgpu;
+use iced_wgpu::wgpu::util::DeviceExt;
+use iced_wgpu::wgpu::{RenderPass};
+use crate::renderer::render;
 
 pub struct DebugDrawer {
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub vertex_buff: wgpu::Buffer,
-    pub uniform_bind_group: wgpu::BindGroup,
+    render_pipeline: wgpu::RenderPipeline,
+    vertex_buff: wgpu::Buffer,
+    uniform_bind_group: wgpu::BindGroup,
 }
 
 impl DebugDrawer {
@@ -49,7 +49,7 @@ impl DebugDrawer {
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/line.vert.spv"));
             let fs_module =
                 device.create_shader_module(&wgpu::include_spirv!("../shader/spv/line.frag.spv"));
-            build_render_pipeline(device, &layout, vs_module, fs_module)
+            render::build_render_pipeline(device, &layout, vs_module, fs_module, SimpleVertex::desc(), wgpu::PrimitiveTopology::LineList)
         };
         let vertex_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
@@ -82,51 +82,4 @@ impl Drawer for DebugDrawer {
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
         render_pass.draw(0..2, 0..1);
     }
-}
-
-pub fn build_render_pipeline(
-    device: &wgpu::Device,
-    render_pipeline_layout: &PipelineLayout,
-    vs_module: ShaderModule,
-    fs_module: ShaderModule,
-) -> wgpu::RenderPipeline {
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("main"),
-        layout: Some(render_pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &vs_module,
-            entry_point: "main",
-            buffers: &[SimpleVertex::desc()],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &fs_module,
-            entry_point: "main",
-            targets: &[wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
-                color_blend: wgpu::BlendState::REPLACE,
-                alpha_blend: wgpu::BlendState::REPLACE,
-                write_mask: wgpu::ColorWrite::ALL,
-            }]
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::LineList,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: wgpu::CullMode::Back,
-            strip_index_format: None,
-            polygon_mode: wgpu::PolygonMode::Fill,
-        },
-        depth_stencil: Some(wgpu::DepthStencilState {
-            format: texture::DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
-            stencil: wgpu::StencilState::default(),
-            bias: Default::default(),
-            clamp_depth: false
-        }),
-        multisample: wgpu::MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-    })
 }

@@ -19,11 +19,6 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub fn from_bytes(bytes: &[u8], label: &str, is_normal_map: bool) -> Result<Texture> {
-        let img = image::load_from_memory(bytes)?;
-        Self::from_image(&img, label, is_normal_map)
-    }
-
     pub fn from_image(img: &image::DynamicImage, label: &str, is_normal_map: bool) -> Result<Self> {
         let dimensions = img.dimensions();
         // todo I can store rgba_image in a Texture

@@ -179,6 +179,29 @@ impl CameraController {
     }
 }
 
+pub struct CameraState {
+    pub camera: Camera,
+    pub camera_controller: CameraController,
+    pub camera_mode: bool,
+    pub projection: Projection,
+    pub cursor_watcher: CursorWatcher,
+}
+
+impl CameraState {
+    pub fn new(width: u32, height: u32) -> CameraState {
+        let camera = Camera::new(Point3::new(10.0, 0.0, -25.0), Deg(90.0), Deg(0.0));
+        let camera_controller = CameraController::new(4.0, 0.4);
+        let projection = Projection::new(width, height, Deg(50.0), 0.1, 1000.0);
+        CameraState {
+            camera,
+            camera_controller,
+            camera_mode: false,
+            projection,
+            cursor_watcher: CursorWatcher::new(),
+        }
+    }
+}
+
 pub struct CursorWatcher {
     pub last_frames_cursor_deltas: Vec<(f64, f64)>,
 }
@@ -186,7 +209,7 @@ pub struct CursorWatcher {
 impl CursorWatcher {
     pub fn new() -> CursorWatcher {
         CursorWatcher {
-            last_frames_cursor_deltas: Vec::with_capacity(3),
+            last_frames_cursor_deltas: Vec::with_capacity(5),
         }
     }
 
