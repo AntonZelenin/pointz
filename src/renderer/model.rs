@@ -137,6 +137,8 @@ impl ModelDrawer {
         });
     }
 
+    // todo maybe I should pass encoder here, so that if I add a lot of instances I will be able to call submit() once when all instances are added
+    // todo potentially slow place
     pub fn add_instances(
         &mut self,
         model_id: usize,
@@ -145,23 +147,19 @@ impl ModelDrawer {
         uniform_buffer: &wgpu::Buffer,
         queue: &wgpu::Queue
     ) {
-        {
-            let instance_buffer = self.instance_buffer_registry.get_mut(&model_id).unwrap();
-            // let instance_buffer = self.create_instance_buffer(objects, device, queue);
-            let instance_data = objects
-                .iter()
-                .map(|object| object.get_raw_transform())
-                .collect::<Vec<_>>();
-            let mut encoder = device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
-            instance_buffer.append(device, &mut encoder, queue, bytemuck::cast_slice(&instance_data));
-        }
+        let instance_buffer = self.instance_buffer_registry.get_mut(&model_id).unwrap();
+        let instance_data = objects
+            .iter()
+            .map(|object| object.get_raw_transform())
+            .collect::<Vec<_>>();
+        let encoder = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
+        instance_buffer.append(device, encoder, queue, bytemuck::cast_slice(&instance_data));
         *self.uniform_bind_group_registry.get_mut(&model_id).unwrap() = self.create_model_uniform_bind_group(model_id, device, uniform_buffer);
-        // *self.instance_buffer_registry.get_mut(&model_id).unwrap() = instance_buffer;
         let model = self.models.get_mut(&model_id).unwrap();
-        model.num_of_instances = objects.len();
+        model.num_of_instances += objects.len();
     }
 
     fn create_instance_buffer(
@@ -176,13 +174,13 @@ impl ModelDrawer {
             .collect::<Vec<_>>();
         // todo 4, change or comment
         let mut instance_buffer: DynamicBuffer<RawTransform> = DynamicBuffer::with_capacity(device, 4 + instance_data.len() * 2, wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST| wgpu::BufferUsage::COPY_SRC);
-        let mut encoder = device
+        let encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
         instance_buffer.append(
             device,
-            &mut encoder,
+            encoder,
             queue,
             bytemuck::cast_slice(&instance_data)
         );
@@ -450,7 +448,7 @@ impl render::Drawer for ModelDrawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
         for (_, internal_model) in self.models.iter() {
-            self.draw_model_instanced(render_pass, &internal_model);
+            self.draw_model_instanced(render_pass, internal_model);
         }
     }
 }

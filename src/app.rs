@@ -1,6 +1,6 @@
 use crate::camera::CameraState;
 use crate::renderer::render::RenderingState;
-use crate::model::{SimpleVertex, Model};
+use crate::model::SimpleVertex;
 use crate::texture::Texture;
 use crate::{renderer, editor, event, model, scene};
 use crate::scene::manager::{Manager, NUM_ROWS, NUM_INSTANCES_PER_ROW, INSTANCE_DISPLACEMENT};
@@ -9,8 +9,6 @@ use cgmath::{Deg, Quaternion, Vector3, Vector4};
 use iced_wgpu::wgpu;
 use iced_winit::winit::event_loop::EventLoop;
 use iced_winit::winit::window::{Window, WindowBuilder};
-use glam::Vec3A;
-use std::collections::HashMap;
 use ordered_float::OrderedFloat;
 use cgmath::num_traits::Pow;
 
@@ -26,31 +24,9 @@ impl IndexDriver {
     }
 
     pub fn next_id(&mut self) -> usize {
+        let idx = self.current_index;
         self.current_index += 1;
-        self.current_index
-    }
-}
-
-pub struct MultipleIndexDriver {
-    indices: HashMap<usize, usize>,
-}
-
-impl MultipleIndexDriver {
-    pub fn new() -> Self {
-        Self { indices: HashMap::new() }
-    }
-
-    pub fn next_id(&mut self, key: &usize) -> usize {
-        match self.indices.get_mut(key) {
-            Some(index) => {
-                *index += 1;
-                *index
-            },
-            None => {
-                self.indices.insert(key.clone(), 0);
-                0
-            }
-        }
+        idx
     }
 }
 
@@ -96,8 +72,8 @@ impl App {
     }
 
     fn add_objects(&mut self) {
-        let t = self.scene_manager.add_model(self.model_loader.load(MODELS[0]).unwrap());
-        let tt = self.scene_manager.add_model(self.model_loader.load(MODELS[1]).unwrap());
+        self.scene_manager.add_model(self.model_loader.load(MODELS[0]).unwrap());
+        self.scene_manager.add_model(self.model_loader.load(MODELS[1]).unwrap());
         let bounding_model_id = self.scene_manager.add_model(self.model_loader.load_primitive(MODELS[2]).unwrap());
         let mut i: i32 = -1;
         let bounding_sphere = self.scene_manager.get_model(bounding_model_id);
@@ -107,17 +83,18 @@ impl App {
                 continue;
             }
             i += 1;
-            self.create_instances(i, *model_id);
-            self.create_bounding_sphere_instances(*model_id, bounding_model_id);
+
+            let new_instances = self.create_instances(i, *model_id);
+            let new_bounding_spheres = self.create_bounding_sphere_instances(*model_id, bounding_model_id);
+
             let model = self.scene_manager.get_model(*model_id);
             self.rendering.init_model(&model);
-            self.rendering.add_instances(&model, &self.scene_manager.get_model_instances(model.id));
-
-            self.rendering.add_bounding_sphere_instances(bounding_model_id, &self.scene_manager.get_model_instances(bounding_model_id));
+            self.rendering.add_instances(&model, &self.scene_manager.get_objects_by_ids(&new_instances));
+            self.rendering.add_bounding_sphere_instances(bounding_model_id, &self.scene_manager.get_objects_by_ids(&new_bounding_spheres));
         }
     }
 
-    fn create_instances(&mut self, i: i32, model_id: usize) {
+    fn create_instances(&mut self, i: i32, model_id: usize) ->Vec<usize> {
         let mut transforms = (0..NUM_ROWS)
             .flat_map(|z| {
                 (0..NUM_INSTANCES_PER_ROW).map(move |x| {
@@ -144,12 +121,14 @@ impl App {
                 })
             })
             .collect::<Vec<_>>();
+        let mut ids: Vec<usize> = vec![];
         for transform in transforms.iter_mut() {
-            self.scene_manager.create_object(model_id.clone(), transform.clone());
+            ids.push(self.scene_manager.create_object(model_id.clone(), transform.clone()));
         }
+        ids
     }
 
-    fn create_bounding_sphere_instances(&mut self, model_id: usize, bounding_sphere_id: usize) {
+    fn create_bounding_sphere_instances(&mut self, model_id: usize, bounding_model_id: usize) ->Vec<usize> {
         let model = self.scene_manager.get_model(model_id);
         let radius = calc_bounding_sphere_radius(model);
 
@@ -159,9 +138,11 @@ impl App {
             transform.scale *= radius;
             transforms.push(transform);
         }
+        let mut ids: Vec<usize> = vec![];
         for transform in transforms {
-            self.scene_manager.create_object(bounding_sphere_id, transform);
+            ids.push(self.scene_manager.create_object(bounding_model_id, transform));
         }
+        ids
     }
 
     pub fn resize(&mut self) {

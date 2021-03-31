@@ -37,6 +37,7 @@ impl Vertex for SimpleVertex {
 
 pub struct Model {
     pub id: usize,
+    pub label: String,
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
 }
@@ -256,6 +257,7 @@ impl Loader {
 
         Ok(Model {
             id: self.index_driver.next_id(),
+            label: String::from(path.as_ref().file_name().unwrap().to_str().unwrap()),
             meshes,
             materials,
         })
@@ -308,6 +310,7 @@ impl Loader {
 
         Ok(Model {
             id: self.index_driver.next_id(),
+            label: String::from(path.as_ref().file_name().unwrap().to_str().unwrap()),
             meshes,
             materials,
         })

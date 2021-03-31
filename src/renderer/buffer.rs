@@ -63,14 +63,12 @@ impl<T: bytemuck::Pod + Copy + 'static> DynamicBuffer<T> {
     pub fn append(
         &mut self,
         device: &wgpu::Device,
-        encoder: &mut wgpu::CommandEncoder,
+        mut encoder: wgpu::CommandEncoder,
         queue: &wgpu::Queue,
         data: &[T],
     ) {
         if self.len + data.len() > self.capacity {
-            // todo it might eat a lot of memory if a buffer will be large
-            // originally there was multiplication
-            // let new_capacity = self.len * data.len() * 2;
+            // todo it might eat a lot of memory if buffer is be large
             let new_capacity = (self.len + data.len()) * 2;
             let new_size = (new_capacity * std::mem::size_of::<T>()) as u64;
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -81,13 +79,6 @@ impl<T: bytemuck::Pod + Copy + 'static> DynamicBuffer<T> {
             });
             self.capacity = new_capacity;
 
-            // encoder.copy_buffer_to_buffer(
-            //     &self.buffer,
-            //     0,
-            //     &buffer,
-            //     0,
-            //     (data.len() * std::mem::size_of::<T>()) as u64,
-            // );
             encoder.copy_buffer_to_buffer(
                 &self.buffer,
                 0,
@@ -97,16 +88,11 @@ impl<T: bytemuck::Pod + Copy + 'static> DynamicBuffer<T> {
             );
             self.buffer = buffer;
         }
-        // queue.write_buffer(&self.buffer, self.len as u64, bytemuck::cast_slice(data));
         queue.write_buffer(&self.buffer, (self.len * std::mem::size_of::<T>()) as u64, bytemuck::cast_slice(data));
         self.len = self.len + data.len();
     }
 
     pub fn get_buffer(&self) -> &wgpu::Buffer {
         &self.buffer
-    }
-
-    pub fn len(&self) -> usize {
-        self.len
     }
 }

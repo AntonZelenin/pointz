@@ -1,6 +1,5 @@
 use crate::model::Model;
-use crate::app::MultipleIndexDriver;
-use glam::Vec3A;
+use crate::app::IndexDriver;
 use legion::Entity;
 use std::collections::HashMap;
 use cgmath::{Matrix4, Vector3, Quaternion};
@@ -16,7 +15,7 @@ pub const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(
 pub struct Object {
     pub(crate) id: usize,
     pub model_id: usize,
-    pub(crate) instance_id: usize,
+    pub instance_id: usize,
     pub transform: Transform,
     entities: Vec<Entity>,
 }
@@ -48,7 +47,7 @@ unsafe impl bytemuck::Pod for RawTransform {}
 unsafe impl bytemuck::Zeroable for RawTransform {}
 
 pub struct Manager {
-    index_driver: MultipleIndexDriver,
+    index_driver: IndexDriver,
     model_registry: HashMap<usize, Model>,
     object_registry: HashMap<usize, Object>,
     model_instances: HashMap<usize, Vec<usize>>,
@@ -57,7 +56,7 @@ pub struct Manager {
 impl Manager {
     pub fn new() -> Self {
         Self {
-            index_driver: MultipleIndexDriver::new(),
+            index_driver: IndexDriver::new(),
             model_registry: HashMap::new(),
             object_registry: HashMap::new(),
             model_instances: HashMap::new(),
@@ -80,7 +79,7 @@ impl Manager {
     }
 
     pub fn create_object(&mut self, model_id: usize, transform: Transform) -> usize {
-        let id = self.index_driver.next_id(&model_id);
+        let id = self.index_driver.next_id();
         let instance_id = match self.model_instances.get(&model_id) {
             Some(instances) => instances.len(),
             None => 0,
@@ -92,7 +91,7 @@ impl Manager {
             transform,
             entities: vec![],
         };
-        self.object_registry.insert(id, object);
+        self.object_registry.insert(object.id, object);
         self.model_instances.get_mut(&model_id).unwrap().push(id);
         id
     }
@@ -100,6 +99,12 @@ impl Manager {
     pub fn get_model_instances(&self, model_id: usize) -> Vec<&Object> {
         let obj_ids = self.model_instances.get(&model_id).unwrap();
         obj_ids.iter().map(|id| self.object_registry.get(id).unwrap()).collect()
+    }
+
+    pub fn get_objects_by_ids(&self, ids: &[usize]) -> Vec<&Object> {
+        ids.iter().map(|id| {
+            self.object_registry.get(id).unwrap()
+        }).collect()
     }
 
     pub fn get_objects(&mut self) -> &mut HashMap<usize, Object> {

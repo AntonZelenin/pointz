@@ -222,7 +222,6 @@ impl RenderingState {
                     }),
                 }),
             });
-            // todo if I comment model renderer get frame will fail with timeout
             self.model_drawer.draw(&mut render_pass);
             self.debug_drawer.draw(&mut render_pass);
             if let Some(bounding_spheres_drawer) = &self.bounding_spheres_drawer {
