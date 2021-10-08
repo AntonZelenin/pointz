@@ -1,3 +1,4 @@
+use iced::Clipboard;
 use iced_wgpu::Renderer;
 use iced_winit::{
     button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text,
@@ -35,8 +36,9 @@ impl GUI {
 impl Program for GUI {
     type Renderer = Renderer;
     type Message = Message;
+    type Clipboard = Clipboard;
 
-    fn update(&mut self, message: Message) -> Command<Message> {
+    fn update(&mut self, message: Message, _: &mut Self::Clipboard) -> Command<Message> {
         match message {
             Message::ChangeBackgroundColor => {
                 self.background_color = if self.background_color == Color::BLACK {

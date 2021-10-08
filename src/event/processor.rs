@@ -84,8 +84,8 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                         app.rendering.gui.cursor_position,
                         app.rendering.viewport.scale_factor(),
                     ),
-                    None,
                     &mut app.rendering.gui.renderer,
+                    &mut iced::Clipboard::connect(&app.window),
                     &mut app.rendering.gui.debug,
                 );
             }
