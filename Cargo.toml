@@ -8,16 +8,16 @@ edition = "2018"
 
 [dependencies]
 physics = { path = "physics", version = "0.1.0" }
-iced = {path = '../../other_repos/iced'}
+iced = {path = '../../other_repos/iced', default_features = false, features = ["wgpu"] }
 iced_winit = {path = '../../other_repos/iced/winit'}
 iced_wgpu = {path = '../../other_repos/iced/wgpu'}
 cgmath = "0.18"
-bytemuck = "1.5.0"
-shaderc = "0.7.1"
-image = "0.23.13"
+bytemuck = "1.7.2"
+shaderc = "0.7.3"
+image = "0.23.14"
 log = "0.4.14"
 tobj = "2.0.3"
-anyhow = "1.0.38"
+anyhow = "1.0.44"
 legion = "0.4.0"
 glam = "0.13.0"
 ordered-float = "2.1.1"

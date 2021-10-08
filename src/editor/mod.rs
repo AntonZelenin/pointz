@@ -3,6 +3,7 @@ use crate::widgets::fps;
 use iced_winit::winit::dpi::PhysicalPosition;
 use iced_wgpu::{Backend, Renderer, Settings, wgpu};
 use winit::dpi::PhysicalSize;
+use iced::Clipboard;
 
 pub struct GUI {
     pub renderer: Renderer,
@@ -67,8 +68,9 @@ impl GUIState {
 impl Program for GUIState {
     type Renderer = Renderer;
     type Message = Message;
+    type Clipboard = Clipboard;
 
-    fn update(&mut self, message: Message) -> Command<Message> {
+    fn update(&mut self, message: Message, _: &mut Self::Clipboard) -> Command<Message> {
         match message {
             Message::ChangeBackgroundColor => {
                 self.background_color = if self.background_color == Color::BLACK {
