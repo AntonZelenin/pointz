@@ -1,58 +1,35 @@
-use crate::buffer::Uniforms;
-use crate::drawer::model::{ModelDrawer, Object};
-use crate::model::{ModelVertex, Vertex, SimpleVertex};
-use crate::scene::GUI;
+use crate::renderer::buffer::Uniforms;
+use crate::renderer::debug::DebugDrawer;
+use crate::renderer::model::ModelDrawer;
+use crate::model::{SimpleVertex, Model};
 use crate::texture::Texture;
-use crate::{drawer, instance, model, texture};
+use crate::{renderer, model, texture};
+use crate::editor::GUI;
+use crate::scene::manager::Object;
 use iced_wgpu::wgpu;
 use iced_wgpu::wgpu::util::DeviceExt;
 use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
 use iced_winit::futures;
 use iced_winit::winit::dpi::PhysicalSize;
 use iced_winit::winit::window::Window;
-use std::collections::HashMap;
 use std::iter;
 use std::time::Instant;
-use crate::drawer::debug::DebugDrawer;
-
-#[macro_export]
-macro_rules! declare_handle {
-    ($($name:ident),*) => {$(
-        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-        pub struct $name(pub(crate) usize);
-
-        impl $name {
-            pub fn get(&self) -> usize {
-                self.0
-            }
-        }
-    )*};
-}
-
-declare_handle!(MeshHandle, MaterialHandle, ObjectHandle, InstanceHandle);
-
-pub struct ResourceRegistry<T> {
-    mapping: HashMap<usize, T>,
-}
-
-impl<T> ResourceRegistry<T> {
-    pub fn new() -> ResourceRegistry<T> {
-        ResourceRegistry {
-            mapping: HashMap::new(),
-        }
-    }
-
-    pub fn insert(&mut self, handle: usize, data: T) {
-        self.mapping.insert(handle, data);
-    }
-
-    pub fn get(&self, handle: usize) -> &T {
-        self.mapping.get(&handle).unwrap()
-    }
-}
+// todo wgpu must be only inside the renderer, but that's not for sure
 
 pub trait Drawer {
     fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>);
+}
+
+pub struct InternalMesh {
+    pub id: usize,
+    pub count: usize,
+    pub material_id: Option<usize>,
+}
+
+pub struct InternalModel {
+    pub id: usize,
+    pub num_of_instances: usize,
+    pub internal_meshes: Vec<InternalMesh>,
 }
 
 pub struct RenderingState {
@@ -68,6 +45,7 @@ pub struct RenderingState {
     pub last_render_time: Instant,
     model_drawer: ModelDrawer,
     debug_drawer: DebugDrawer,
+    bounding_spheres_drawer: Option<ModelDrawer>,
     pub depth_texture_view: wgpu::TextureView,
 }
 
@@ -108,7 +86,7 @@ impl RenderingState {
         };
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
         let depth_texture = Texture::create_depth_texture(&sc_desc, "depth_texture");
-        let depth_texture_view = drawer::model::create_depth_view(&depth_texture, &device, &queue);
+        let depth_texture_view = renderer::model::create_depth_view(&depth_texture, &device, &queue);
         let uniforms = Uniforms::new();
         // todo will update it later using camera
         // uniforms.update_view_proj(&camera, &projection);
@@ -118,7 +96,7 @@ impl RenderingState {
             label: Some("uniform buffer"),
         });
 
-        let model_drawer = ModelDrawer::new(&device);
+        let model_drawer = ModelDrawer::new(&device, wgpu::PrimitiveTopology::TriangleList);
         let debug_drawer = DebugDrawer::new(&device, &uniform_buffer);
         let viewport = iced_wgpu::Viewport::with_physical_size(
             iced::Size::new(size.width, size.height),
@@ -139,27 +117,62 @@ impl RenderingState {
             uniform_buffer,
             model_drawer,
             debug_drawer,
+            bounding_spheres_drawer: None,
             depth_texture_view,
         }
     }
 
-    // todo I need to wrap evey call to drawer, improve
-    pub fn add_model(
-        &mut self,
-        model: model::Model,
-        instances: Vec<instance::Instance>,
-    ) -> Object {
-        self.model_drawer.add_model(
+    // todo I need to wrap evey call to renderer, improve
+    pub fn init_model(&mut self, model: &Model) {
+        self.model_drawer.init_model(
             model,
-            instances,
             &self.device,
             &self.queue,
             &self.uniform_buffer,
         )
     }
 
-    pub fn update_instance(&mut self, handle: ObjectHandle, instance_idx: usize, instance: &instance::Instance) {
-        self.model_drawer.update_instance(handle, instance_idx, instance, &self.queue);
+    pub fn init_bounding_sphere_model(&mut self, model: &Model) {
+        self.bounding_spheres_drawer.as_mut().unwrap().init_model(
+            model,
+            &self.device,
+            &self.queue,
+            &self.uniform_buffer,
+        )
+    }
+
+    pub fn add_instances(
+        &mut self,
+        model: &model::Model,
+        instances: &Vec<&Object>,
+    ) {
+        self.model_drawer.add_instances(
+            model.id,
+            instances,
+            &self.device,
+            &self.uniform_buffer,
+            &self.queue
+        );
+    }
+
+    pub fn init_bounding_sphere(&mut self, model: &Model) {
+        match &mut self.bounding_spheres_drawer {
+            None => {
+                self.bounding_spheres_drawer = Some(ModelDrawer::new(&self.device, wgpu::PrimitiveTopology::LineList));
+                self.init_bounding_sphere_model(model);
+            },
+            _ => {panic!("Bounding sphere already initialized")}
+        }
+    }
+
+    pub fn add_bounding_sphere_instances(&mut self, bounding_model_id: usize, sphere_instances: &Vec<&Object>) {
+        self.bounding_spheres_drawer.as_mut().unwrap().add_instances(bounding_model_id,sphere_instances, &self.device, &self.uniform_buffer, &self.queue);
+    }
+
+    // todo add update all method?
+
+    pub fn update_object(&mut self, object: &Object) {
+        self.model_drawer.update_object(object, &self.queue);
     }
 
     pub fn render(&mut self, window: &Window) {
@@ -211,6 +224,9 @@ impl RenderingState {
             });
             self.model_drawer.draw(&mut render_pass);
             self.debug_drawer.draw(&mut render_pass);
+            if let Some(bounding_spheres_drawer) = &self.bounding_spheres_drawer {
+                bounding_spheres_drawer.draw(&mut render_pass);
+            }
         }
 
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
@@ -240,6 +256,8 @@ pub fn build_render_pipeline(
     render_pipeline_layout: &PipelineLayout,
     vs_module: ShaderModule,
     fs_module: ShaderModule,
+    vertex_buffer_layout: wgpu::VertexBufferLayout,
+    topology: wgpu::PrimitiveTopology,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("main"),
@@ -247,7 +265,7 @@ pub fn build_render_pipeline(
         vertex: wgpu::VertexState {
             module: &vs_module,
             entry_point: "main",
-            buffers: &[ModelVertex::desc()],
+            buffers: &[vertex_buffer_layout],
         },
         fragment: Some(wgpu::FragmentState {
             module: &fs_module,
@@ -260,7 +278,7 @@ pub fn build_render_pipeline(
             }],
         }),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
+            topology,
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: wgpu::CullMode::Back,
             strip_index_format: None,
@@ -272,7 +290,7 @@ pub fn build_render_pipeline(
             depth_compare: wgpu::CompareFunction::Less,
             stencil: wgpu::StencilState::default(),
             bias: Default::default(),
-            clamp_depth: false
+            clamp_depth: false,
         }),
         multisample: wgpu::MultisampleState {
             count: 1,

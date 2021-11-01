@@ -1,23 +1,21 @@
 extern crate log;
 
-mod buffer;
+use app::App;
+
 mod camera;
-mod controls;
-mod drawer;
+mod renderer;
+mod editor;
 mod event;
-mod instance;
 mod lighting;
 mod model;
-mod primitives;
-mod scene;
+mod app;
 mod shader;
 mod texture;
 mod widgets;
-
-use scene::App;
+mod scene;
 
 pub fn main() {
-    env_logger::init();
+    // todo define a ROOT const
     shader::compile_shaders("src/shader");
     App::run();
 }

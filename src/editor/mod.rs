@@ -1,10 +1,42 @@
+use iced_winit::{button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text, program, conversion, winit, Debug, Size};
+use crate::widgets::fps;
+use iced_winit::winit::dpi::PhysicalPosition;
+use iced_wgpu::{Backend, Renderer, Settings, wgpu};
+use winit::dpi::PhysicalSize;
 use iced::Clipboard;
-use iced_wgpu::Renderer;
-use iced_winit::{
-    button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text,
-};
 
 pub struct GUI {
+    pub renderer: Renderer,
+    pub program_state: program::State<GUIState>,
+    // todo keep a list of widgets, come up with a normal design
+    pub(crate) fps_meter: fps::Meter,
+    pub cursor_position: PhysicalPosition<f64>,
+    pub debug: Debug,
+
+}
+
+impl GUI {
+    pub fn new(device: &wgpu::Device, scale_factor: f64, size: PhysicalSize<u32>) -> GUI {
+        let mut renderer = iced_wgpu::Renderer::new(Backend::new(device, Settings::default()));
+        let mut debug = Debug::new();
+        let program_state = program::State::new(
+            GUIState::new(),
+            Size::new(size.width as f32, size.height as f32),
+            conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), scale_factor),
+            &mut renderer,
+            &mut debug,
+        );
+        GUI {
+            renderer,
+            program_state,
+            fps_meter: fps::Meter::new(),
+            cursor_position: PhysicalPosition::new(0.0, 0.0),
+            debug,
+        }
+    }
+}
+
+pub struct GUIState {
     background_color: Color,
     buttons: [button::State; 1],
     fps: i32,
@@ -18,9 +50,9 @@ pub enum Message {
     DebugInfo(String),
 }
 
-impl GUI {
-    pub fn new() -> GUI {
-        GUI {
+impl GUIState {
+    pub fn new() -> GUIState {
+        GUIState {
             background_color: Color::BLACK,
             buttons: Default::default(),
             fps: 0,
@@ -33,7 +65,7 @@ impl GUI {
     }
 }
 
-impl Program for GUI {
+impl Program for GUIState {
     type Renderer = Renderer;
     type Message = Message;
     type Clipboard = Clipboard;

@@ -1,4 +1,4 @@
-use crate::scene::App;
+use crate::app::App;
 use iced_winit::winit::event::{
     DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, MouseButton, WindowEvent,
 };

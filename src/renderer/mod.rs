@@ -1,3 +1,4 @@
+mod debug;
 pub mod model;
 pub mod render;
-mod debug;
+mod buffer;
