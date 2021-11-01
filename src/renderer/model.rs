@@ -41,7 +41,7 @@ impl ModelDrawer {
                         &texture_bind_group_layout,
                         &light_bind_group_layout,
                     ],
-                    label: Some("main"),
+                    label: Some("Render pipeline layout"),
                     push_constant_ranges: &[],
                 });
             let vs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
@@ -52,7 +52,15 @@ impl ModelDrawer {
                 label: Some("shader.frag"),
                 source: wgpu::util::make_spirv(&fs::read("src/shader/spv/shader.frag.spv").unwrap()),
             });
-            render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module, ModelVertex::desc(), primitive_topology)
+            render::build_render_pipeline(
+                &device,
+                &render_pipeline_layout,
+                vs_module,
+                fs_module,
+                ModelVertex::desc(),
+                primitive_topology,
+                "Model render pipeline",
+            )
         };
         let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
         // We'll want to update our lights position, so we use COPY_DST
@@ -174,7 +182,11 @@ impl ModelDrawer {
             .map(|object| object.get_raw_transform())
             .collect::<Vec<_>>();
         // todo 4, change or comment
-        let mut instance_buffer: DynamicBuffer<RawTransform> = DynamicBuffer::with_capacity(device, 4 + instance_data.len() * 2, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC);
+        let mut instance_buffer: DynamicBuffer<RawTransform> = DynamicBuffer::with_capacity(
+            device,
+            4 + instance_data.len() * 2,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC
+        );
         let encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
@@ -325,8 +337,6 @@ impl ModelDrawer {
                     binding: 1,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
-                        // todo maybe error related to read_only
-                        // todo what if I migrate to 0.11?
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
@@ -346,7 +356,7 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,
@@ -366,7 +376,7 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
                     },
                     count: None,

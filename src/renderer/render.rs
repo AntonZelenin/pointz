@@ -57,6 +57,7 @@ impl RenderingState {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::default(),
+                    force_fallback_adapter: false,
                     compatible_surface: Some(&surface),
                 })
                 .await
@@ -179,9 +180,8 @@ impl RenderingState {
     pub fn render(&mut self, window: &Window) {
         let frame = self
             .surface
-            .get_current_frame()
-            .expect("Timeout getting texture")
-            .output;
+            .get_current_texture()
+            .expect("Timeout getting texture");
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -262,9 +262,10 @@ pub fn build_render_pipeline(
     fs_module: wgpu::ShaderModule,
     vertex_buffer_layout: wgpu::VertexBufferLayout,
     topology: wgpu::PrimitiveTopology,
+    label: &str,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("main"),
+        label: Some(label),
         layout: Some(render_pipeline_layout),
         vertex: wgpu::VertexState {
             module: &vs_module,
