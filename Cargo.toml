@@ -10,6 +10,7 @@ edition = "2018"
 iced = {path = '../../other_repos/iced', default_features = false, features = ["wgpu"] }
 iced_winit = {path = '../../other_repos/iced/winit'}
 iced_wgpu = {path = '../../other_repos/iced/wgpu'}
+wgpu = "0.7"
 cgmath = "0.18"
 bytemuck = "1.7.2"
 shaderc = "0.7.3"

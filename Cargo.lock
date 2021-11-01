@@ -1909,6 +1909,7 @@ dependencies = [
  "ordered-float 2.8.0",
  "shaderc",
  "tobj",
+ "wgpu",
 ]
 
 [[package]]

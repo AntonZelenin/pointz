@@ -1,5 +1,5 @@
 use anyhow::*;
-use iced_wgpu::wgpu;
+use wgpu;
 use image::{GenericImageView, RgbaImage};
 use std::path::Path;
 

@@ -6,9 +6,8 @@ use crate::model::{ModelVertex, Vertex};
 use crate::app::IndexDriver;
 use crate::scene::manager::{Object, RawTransform};
 use crate::renderer::render::{InternalModel, InternalMesh};
-use iced_wgpu::wgpu;
-use iced_wgpu::wgpu::util::DeviceExt;
-use iced_wgpu::wgpu::RenderPass;
+use wgpu;
+use wgpu::util::DeviceExt;
 use std::ops::Range;
 use std::collections::HashMap;
 use crate::renderer::buffer::DynamicBuffer;
@@ -408,7 +407,7 @@ impl ModelDrawer {
 
     fn draw_model_instanced<'a: 'b, 'b>(
         &'a self,
-        render_pass: &'b mut RenderPass<'a>,
+        render_pass: &'b mut wgpu::RenderPass<'a>,
         internal_model: &InternalModel,
     ) {
         for internal_mesh in internal_model.internal_meshes.iter() {
@@ -423,7 +422,7 @@ impl ModelDrawer {
 
     fn draw_mesh_instanced<'a: 'b, 'b>(
         &'a self,
-        render_pass: &'b mut RenderPass<'a>,
+        render_pass: &'b mut wgpu::RenderPass<'a>,
         internal_mesh: &InternalMesh,
         uniform_bind_group: &'a wgpu::BindGroup,
         instances: Range<u32>,
@@ -445,7 +444,7 @@ impl ModelDrawer {
 }
 
 impl render::Drawer for ModelDrawer {
-    fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
+    fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut wgpu::RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
         for (_, internal_model) in self.models.iter() {
             self.draw_model_instanced(render_pass, internal_model);

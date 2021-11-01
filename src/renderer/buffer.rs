@@ -1,7 +1,7 @@
 use crate::camera::{Camera, Projection};
 use cgmath::prelude::*;
 use cgmath::Matrix4;
-use iced_wgpu::wgpu;
+use wgpu;
 
 #[repr(C)]
 #[derive(Copy, Clone)]

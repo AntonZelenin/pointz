@@ -6,9 +6,7 @@ use crate::texture::Texture;
 use crate::{renderer, model, texture};
 use crate::editor::GUI;
 use crate::scene::manager::Object;
-use iced_wgpu::wgpu;
-use iced_wgpu::wgpu::util::DeviceExt;
-use iced_wgpu::wgpu::{PipelineLayout, RenderPass, ShaderModule};
+use wgpu::util::DeviceExt;
 use iced_winit::futures;
 use iced_winit::winit::dpi::PhysicalSize;
 use iced_winit::winit::window::Window;
@@ -17,7 +15,7 @@ use std::time::Instant;
 // todo wgpu must be only inside the renderer, but that's not for sure
 
 pub trait Drawer {
-    fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>);
+    fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut wgpu::RenderPass<'a>);
 }
 
 pub struct InternalMesh {
@@ -253,9 +251,9 @@ impl RenderingState {
 
 pub fn build_render_pipeline(
     device: &wgpu::Device,
-    render_pipeline_layout: &PipelineLayout,
-    vs_module: ShaderModule,
-    fs_module: ShaderModule,
+    render_pipeline_layout: &wgpu::PipelineLayout,
+    vs_module: wgpu::ShaderModule,
+    fs_module: wgpu::ShaderModule,
     vertex_buffer_layout: wgpu::VertexBufferLayout,
     topology: wgpu::PrimitiveTopology,
 ) -> wgpu::RenderPipeline {

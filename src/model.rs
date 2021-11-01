@@ -1,7 +1,7 @@
 use std::path::Path;
 use anyhow::*;
 use cgmath::{Vector2, Vector3, Zero};
-use iced_wgpu::wgpu;
+use wgpu;
 use crate::app::IndexDriver;
 use crate::texture;
 

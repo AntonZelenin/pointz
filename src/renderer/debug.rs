@@ -1,8 +1,7 @@
 use crate::renderer::render::Drawer;
 use crate::model::{SimpleVertex, Vertex};
-use iced_wgpu::wgpu;
-use iced_wgpu::wgpu::util::DeviceExt;
-use iced_wgpu::wgpu::{RenderPass};
+use wgpu;
+use wgpu::util::DeviceExt;
 use crate::renderer::render;
 
 pub struct DebugDrawer {
@@ -76,7 +75,7 @@ impl DebugDrawer {
 }
 
 impl Drawer for DebugDrawer {
-    fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut RenderPass<'a>) {
+    fn draw<'a: 'b, 'b>(&'a self, render_pass: &'b mut wgpu::RenderPass<'a>) {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(0, self.vertex_buff.slice(..));
         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
