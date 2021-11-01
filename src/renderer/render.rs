@@ -33,8 +33,7 @@ pub struct InternalModel {
 pub struct RenderingState {
     pub gui: GUI,
     pub viewport: iced_wgpu::Viewport,
-    pub sc_desc: wgpu::SwapChainDescriptor,
-    pub swap_chain: wgpu::SwapChain,
+    pub surface_config: wgpu::SurfaceConfiguration,
     pub surface: wgpu::Surface,
     pub queue: wgpu::Queue,
     pub device: wgpu::Device,
@@ -54,7 +53,7 @@ impl RenderingState {
         size: PhysicalSize<u32>,
         scale_factor: f64,
     ) -> RenderingState {
-        let (device, queue) = futures::executor::block_on(async {
+        let (texture_format, (device, queue)) = futures::executor::block_on(async {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::default(),
@@ -63,34 +62,39 @@ impl RenderingState {
                 .await
                 .expect("Request adapter");
 
-            adapter
-                .request_device(
-                    &wgpu::DeviceDescriptor {
-                        label: Some("device descriptor, I guess I have only one device"),
-                        features: wgpu::Features::empty(),
-                        limits: wgpu::Limits::default(),
-                    },
-                    None,
-                )
-                .await
-                .expect("Failed to create device")
+            (
+                surface
+                    .get_preferred_format(&adapter)
+                    .expect("Get preferred format"),
+                adapter
+                    .request_device(
+                        &wgpu::DeviceDescriptor {
+                            label: Some("device descriptor, I guess I have only one device"),
+                            features: wgpu::Features::empty(),
+                            limits: wgpu::Limits::default(),
+                        },
+                        None,
+                    )
+                    .await
+                    .expect("Failed to create device")
+            )
         });
-        let sc_desc = wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
+        let surface_config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
         };
-        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
-        let depth_texture = Texture::create_depth_texture(&sc_desc, "depth_texture");
+        surface.configure(&device, &surface_config);
+        let depth_texture = Texture::create_depth_texture(&surface_config, "depth_texture");
         let depth_texture_view = renderer::model::create_depth_view(&depth_texture, &device, &queue);
         let uniforms = Uniforms::new();
         // todo will update it later using camera
         // uniforms.update_view_proj(&camera, &projection);
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&[uniforms]),
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             label: Some("uniform buffer"),
         });
 
@@ -100,14 +104,13 @@ impl RenderingState {
             iced::Size::new(size.width, size.height),
             scale_factor,
         );
-        let gui = GUI::new(&device, scale_factor, size);
+        let gui = GUI::new(&device, scale_factor, size, texture_format);
 
         RenderingState {
             gui,
             viewport,
-            swap_chain,
-            sc_desc,
             surface,
+            surface_config,
             queue,
             device,
             last_render_time: std::time::Instant::now(),
@@ -175,7 +178,7 @@ impl RenderingState {
 
     pub fn render(&mut self, window: &Window) {
         let frame = self
-            .swap_chain
+            .surface
             .get_current_frame()
             .expect("Timeout getting texture")
             .output;
@@ -184,11 +187,14 @@ impl RenderingState {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+        let view = &frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &frame.view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: {
@@ -232,7 +238,7 @@ impl RenderingState {
             &mut self.device,
             &mut staging_belt,
             &mut encoder,
-            &frame.view,
+            view,
             &self.viewport,
             self.gui.program_state.primitive(),
             &self.gui.debug.overlay(),
@@ -274,7 +280,7 @@ pub fn build_render_pipeline(
                     color: wgpu::BlendComponent::REPLACE,
                     alpha: wgpu::BlendComponent::REPLACE,
                 }),
-                write_mask: wgpu::ColorWrite::ALL,
+                write_mask: wgpu::ColorWrites::ALL,
             }],
         }),
         primitive: wgpu::PrimitiveState {

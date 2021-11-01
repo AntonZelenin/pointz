@@ -33,7 +33,7 @@ impl Uniforms {
 
 pub struct DynamicBuffer<T: bytemuck::Pod + Copy> {
     buffer: wgpu::Buffer,
-    usage: wgpu::BufferUsage,
+    usage: wgpu::BufferUsages,
     capacity: usize,
     len: usize,
     phantom: std::marker::PhantomData<T>,
@@ -43,9 +43,9 @@ impl<T: bytemuck::Pod + Copy + 'static> DynamicBuffer<T> {
     pub fn with_capacity(
         device: &wgpu::Device,
         initial_capacity: usize,
-        mut usage: wgpu::BufferUsage,
+        mut usage: wgpu::BufferUsages,
     ) -> Self {
-        usage |= wgpu::BufferUsage::COPY_DST;
+        usage |= wgpu::BufferUsages::COPY_DST;
         Self {
             buffer: device.create_buffer(&wgpu::BufferDescriptor {
                 mapped_at_creation: false,

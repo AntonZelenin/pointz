@@ -16,8 +16,8 @@ pub struct GUI {
 }
 
 impl GUI {
-    pub fn new(device: &wgpu::Device, scale_factor: f64, size: PhysicalSize<u32>) -> GUI {
-        let mut renderer = iced_wgpu::Renderer::new(Backend::new(device, Settings::default()));
+    pub fn new(device: &wgpu::Device, scale_factor: f64, size: PhysicalSize<u32>, texture_format: wgpu::TextureFormat) -> GUI {
+        let mut renderer = iced_wgpu::Renderer::new(Backend::new(device, Settings::default(), texture_format));
         let mut debug = Debug::new();
         let program_state = program::State::new(
             GUIState::new(),
