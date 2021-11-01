@@ -57,6 +57,7 @@ impl RenderingState {
             let adapter = instance
                 .request_adapter(&wgpu::RequestAdapterOptions {
                     power_preference: wgpu::PowerPreference::default(),
+                    force_fallback_adapter: false,
                     compatible_surface: Some(&surface),
                 })
                 .await
@@ -179,9 +180,8 @@ impl RenderingState {
     pub fn render(&mut self, window: &Window) {
         let frame = self
             .surface
-            .get_current_frame()
-            .expect("Timeout getting texture")
-            .output;
+            .get_current_texture()
+            .expect("Timeout getting texture");
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -248,6 +248,7 @@ impl RenderingState {
         // todo event to remove window from here?
         window.set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
         self.queue.submit(iter::once(encoder.finish()));
+        frame.present();
     }
 
     pub fn add_line(&mut self, start: SimpleVertex, end: SimpleVertex) {
