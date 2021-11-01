@@ -2,17 +2,17 @@ extern crate log;
 
 use app::App;
 
+mod app;
 mod camera;
-mod renderer;
 mod editor;
 mod event;
 mod lighting;
 mod model;
-mod app;
+mod renderer;
+mod scene;
 mod shader;
 mod texture;
 mod widgets;
-mod scene;
 
 pub fn main() {
     // todo define a ROOT const

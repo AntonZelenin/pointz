@@ -10,6 +10,8 @@ use wgpu;
 use wgpu::util::DeviceExt;
 use std::ops::Range;
 use std::collections::HashMap;
+use std::fs;
+use std::num::NonZeroU32;
 use crate::renderer::buffer::DynamicBuffer;
 
 pub struct ModelDrawer {
@@ -42,10 +44,16 @@ impl ModelDrawer {
                     label: Some("main"),
                     push_constant_ranges: &[],
                 });
-            let vs_module =
-                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.vert.spv"));
-            let fs_module =
-                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/shader.frag.spv"));
+            let vs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("shader.vert"),
+                source: wgpu::util::make_spirv(&fs::read("src/shader/spv/shader.vert.spv").unwrap()),
+                flags: wgpu::ShaderFlags::EXPERIMENTAL_TRANSLATION,
+            });
+            let fs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("shader.frag"),
+                source: wgpu::util::make_spirv(&fs::read("src/shader/spv/shader.frag.spv").unwrap()),
+                flags: wgpu::ShaderFlags::EXPERIMENTAL_TRANSLATION,
+            });
             render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module, ModelVertex::desc(), primitive_topology)
         };
         let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
@@ -59,11 +67,7 @@ impl ModelDrawer {
             layout: &light_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer {
-                    buffer: &light_buffer,
-                    offset: 0,
-                    size: None,
-                },
+                resource: light_buffer.as_entire_binding(),
             }],
             label: None,
         });
@@ -295,19 +299,11 @@ impl ModelDrawer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: uniform_buffer,
-                        offset: 0,
-                        size: None,
-                    },
+                    resource: uniform_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: instance_buffer.get_buffer(),
-                        offset: 0,
-                        size: None,
-                    },
+                    resource: instance_buffer.get_buffer().as_entire_binding(),
                 },
             ],
             label: Some("uniform_bind_group"),
@@ -360,7 +356,7 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Sampler {
                         comparison: false,
-                        filtering: false,
+                        filtering: true,
                     },
                     count: None,
                 },
@@ -380,7 +376,7 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Sampler {
                         comparison: false,
-                        filtering: false,
+                        filtering: true,
                     },
                     count: None,
                 },
@@ -462,7 +458,7 @@ pub fn create_view(
         size: wgpu::Extent3d {
             width: texture.dimensions.0,
             height: texture.dimensions.1,
-            depth: 1,
+            depth_or_array_layers: 1,
         },
         mip_level_count: 1,
         sample_count: 1,
@@ -476,21 +472,21 @@ pub fn create_view(
     });
     if let Some(rgba_image) = texture.rgba_image.as_ref() {
         queue.write_texture(
-            wgpu::TextureCopyView {
+            wgpu::ImageCopyTexture {
                 texture: &wgpu_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
             rgba_image,
-            wgpu::TextureDataLayout {
+            wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: 4 * texture.dimensions.0,
-                rows_per_image: texture.dimensions.1,
+                bytes_per_row: NonZeroU32::new(4 * texture.dimensions.0),
+                rows_per_image: NonZeroU32::new(texture.dimensions.1),
             },
             wgpu::Extent3d {
                 width: texture.dimensions.0,
                 height: texture.dimensions.1,
-                depth: 1,
+                depth_or_array_layers: 1,
             },
         );
     }
@@ -507,7 +503,7 @@ pub fn create_depth_view(
         size: wgpu::Extent3d {
             width: texture.dimensions.0,
             height: texture.dimensions.1,
-            depth: 1,
+            depth_or_array_layers: 1,
         },
         mip_level_count: 1,
         sample_count: 1,
@@ -519,21 +515,21 @@ pub fn create_depth_view(
     });
     if let Some(rgba_image) = texture.rgba_image.as_ref() {
         queue.write_texture(
-            wgpu::TextureCopyView {
+            wgpu::ImageCopyTexture {
                 texture: &wgpu_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
             rgba_image,
-            wgpu::TextureDataLayout {
+            wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: 4 * texture.dimensions.0,
-                rows_per_image: texture.dimensions.1,
+                bytes_per_row: NonZeroU32::new(4 * texture.dimensions.0),
+                rows_per_image: NonZeroU32::new(texture.dimensions.1),
             },
             wgpu::Extent3d {
                 width: texture.dimensions.0,
                 height: texture.dimensions.1,
-                depth: 1,
+                depth_or_array_layers: 1,
             },
         );
     }

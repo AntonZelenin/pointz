@@ -2,7 +2,7 @@
 name = "pointz"
 version = "0.1.1"
 authors = ["Anton Zelenin <ntnzelenin@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,7 +10,7 @@ edition = "2018"
 iced = {path = '../../other_repos/iced', default_features = false, features = ["wgpu"] }
 iced_winit = {path = '../../other_repos/iced/winit'}
 iced_wgpu = {path = '../../other_repos/iced/wgpu'}
-wgpu = "0.7"
+wgpu = "0.8.1"
 cgmath = "0.18"
 bytemuck = "1.7.2"
 shaderc = "0.7.3"

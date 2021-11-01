@@ -1,3 +1,4 @@
+use std::fs;
 use crate::renderer::render::Drawer;
 use crate::model::{SimpleVertex, Vertex};
 use wgpu;
@@ -30,11 +31,7 @@ impl DebugDrawer {
             layout: &debug_uniform_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer {
-                    buffer: &uniform_buffer,
-                    offset: 0,
-                    size: None,
-                },
+                resource: uniform_buffer.as_entire_binding(),
             }],
             label: Some("debug_uniform_bind_group"),
         });
@@ -44,10 +41,16 @@ impl DebugDrawer {
                 bind_group_layouts: &[&debug_uniform_bind_group_layout],
                 push_constant_ranges: &[],
             });
-            let vs_module =
-                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/line.vert.spv"));
-            let fs_module =
-                device.create_shader_module(&wgpu::include_spirv!("../shader/spv/line.frag.spv"));
+            let vs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("line.vert"),
+                source:wgpu::util::make_spirv(&fs::read("src/shader/spv/line.vert.spv").unwrap()),
+                flags: wgpu::ShaderFlags::EXPERIMENTAL_TRANSLATION,
+            });
+            let fs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+                label: Some("line.frag"),
+                source:wgpu::util::make_spirv(&fs::read("src/shader/spv/line.frag.spv").unwrap()),
+                flags: wgpu::ShaderFlags::EXPERIMENTAL_TRANSLATION,
+            });
             render::build_render_pipeline(device, &layout, vs_module, fs_module, SimpleVertex::desc(), wgpu::PrimitiveTopology::LineList)
         };
         let vertex_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
