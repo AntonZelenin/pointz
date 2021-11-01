@@ -10,7 +10,7 @@ edition = "2021"
 iced = {path = '../../other_repos/iced', default_features = false, features = ["wgpu"] }
 iced_winit = {path = '../../other_repos/iced/winit'}
 iced_wgpu = {path = '../../other_repos/iced/wgpu'}
-wgpu = { version = "0.11", features = ["spirv"] }
+wgpu = { version = "0.10.2", features = ["spirv"] }
 cgmath = "0.18"
 bytemuck = "1.7.2"
 shaderc = "0.7.3"

@@ -49,15 +49,7 @@ impl DebugDrawer {
                 label: Some("line.frag"),
                 source: wgpu::util::make_spirv(&fs::read("src/shader/spv/line.frag.spv").unwrap()),
             });
-            render::build_render_pipeline(
-                device,
-                &layout,
-                vs_module,
-                fs_module,
-                SimpleVertex::desc(),
-                wgpu::PrimitiveTopology::LineList,
-                "Debug render pipeline"
-            )
+            render::build_render_pipeline(device, &layout, vs_module, fs_module, SimpleVertex::desc(), wgpu::PrimitiveTopology::LineList)
         };
         let vertex_buff = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),

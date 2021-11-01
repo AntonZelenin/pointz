@@ -1,8 +1,9 @@
-use iced_winit::{button, Alignment, Button, Color, Column, Command, Element, Length, Program, Row, Text, program, conversion, winit, Debug, Size};
+use iced_winit::{button, Align, Button, Color, Column, Command, Element, Length, Program, Row, Text, program, conversion, winit, Debug, Size};
 use crate::widgets::fps;
 use iced_winit::winit::dpi::PhysicalPosition;
 use iced_wgpu::{Backend, Renderer, Settings, wgpu};
 use winit::dpi::PhysicalSize;
+use iced::Clipboard;
 
 pub struct GUI {
     pub renderer: Renderer,
@@ -67,8 +68,9 @@ impl GUIState {
 impl Program for GUIState {
     type Renderer = Renderer;
     type Message = Message;
+    type Clipboard = Clipboard;
 
-    fn update(&mut self, message: Message) -> Command<Message> {
+    fn update(&mut self, message: Message, _: &mut Self::Clipboard) -> Command<Message> {
         match message {
             Message::ChangeBackgroundColor => {
                 self.background_color = if self.background_color == Color::BLACK {
@@ -91,11 +93,11 @@ impl Program for GUIState {
         Row::new()
             .width(Length::Fill)
             .height(Length::Fill)
-            .align_items(Alignment::End)
+            .align_items(Align::End)
             .push(
                 Column::new()
                     .width(Length::Shrink)
-                    .align_items(Alignment::Start)
+                    .align_items(Align::Start)
                     .push(
                         Text::new(self.fps.to_string())
                             .size(30)
@@ -110,7 +112,7 @@ impl Program for GUIState {
             .push(
                 Column::new()
                     .width(Length::Fill)
-                    .align_items(Alignment::End)
+                    .align_items(Align::End)
                     .push(
                         Column::new().padding(10).spacing(10).push(
                             Button::new(&mut self.buttons[0], Text::new("Change background"))
