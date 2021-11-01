@@ -47,12 +47,10 @@ impl ModelDrawer {
             let vs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("shader.vert"),
                 source: wgpu::util::make_spirv(&fs::read("src/shader/spv/shader.vert.spv").unwrap()),
-                flags: wgpu::ShaderFlags::EXPERIMENTAL_TRANSLATION,
             });
             let fs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("shader.frag"),
                 source: wgpu::util::make_spirv(&fs::read("src/shader/spv/shader.frag.spv").unwrap()),
-                flags: wgpu::ShaderFlags::EXPERIMENTAL_TRANSLATION,
             });
             render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module, ModelVertex::desc(), primitive_topology)
         };
@@ -60,7 +58,7 @@ impl ModelDrawer {
         // We'll want to update our lights position, so we use COPY_DST
         let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&[light]),
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             label: Some("light buffer"),
         });
         let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -176,7 +174,7 @@ impl ModelDrawer {
             .map(|object| object.get_raw_transform())
             .collect::<Vec<_>>();
         // todo 4, change or comment
-        let mut instance_buffer: DynamicBuffer<RawTransform> = DynamicBuffer::with_capacity(device, 4 + instance_data.len() * 2, wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST| wgpu::BufferUsage::COPY_SRC);
+        let mut instance_buffer: DynamicBuffer<RawTransform> = DynamicBuffer::with_capacity(device, 4 + instance_data.len() * 2, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC);
         let encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
@@ -222,7 +220,7 @@ impl ModelDrawer {
     fn create_mesh_index_buffer(&self, mesh: &model::Mesh, device: &wgpu::Device) -> wgpu::Buffer {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&mesh.indices),
-            usage: wgpu::BufferUsage::INDEX,
+            usage: wgpu::BufferUsages::INDEX,
             label: Some("index buffer"),
         })
     }
@@ -230,7 +228,7 @@ impl ModelDrawer {
     fn create_vertex_buffer(&self, mesh: &model::Mesh, device: &wgpu::Device) -> wgpu::Buffer {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             contents: bytemuck::cast_slice(&mesh.vertices),
-            usage: wgpu::BufferUsage::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX,
             label: Some("vertex buffer"),
         })
     }
@@ -315,7 +313,7 @@ impl ModelDrawer {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -325,8 +323,10 @@ impl ModelDrawer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStage::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
+                        // todo maybe error related to read_only
+                        // todo what if I migrate to 0.11?
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
@@ -343,7 +343,7 @@ impl ModelDrawer {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
@@ -353,7 +353,7 @@ impl ModelDrawer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler {
                         comparison: false,
                         filtering: true,
@@ -363,7 +363,7 @@ impl ModelDrawer {
                 // normal map
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         sample_type: wgpu::TextureSampleType::Float { filterable: false },
@@ -373,7 +373,7 @@ impl ModelDrawer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler {
                         comparison: false,
                         filtering: true,
@@ -389,7 +389,7 @@ impl ModelDrawer {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -468,7 +468,7 @@ pub fn create_view(
             TextureType::Diffuse => wgpu::TextureFormat::Rgba8UnormSrgb,
             TextureType::Depth => texture::DEPTH_FORMAT,
         },
-        usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
     });
     if let Some(rgba_image) = texture.rgba_image.as_ref() {
         queue.write_texture(
@@ -476,6 +476,7 @@ pub fn create_view(
                 texture: &wgpu_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::default(),
             },
             rgba_image,
             wgpu::ImageDataLayout {
@@ -509,9 +510,9 @@ pub fn create_depth_view(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: texture::DEPTH_FORMAT,
-        usage: wgpu::TextureUsage::RENDER_ATTACHMENT
-            | wgpu::TextureUsage::SAMPLED
-            | wgpu::TextureUsage::COPY_SRC,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,
     });
     if let Some(rgba_image) = texture.rgba_image.as_ref() {
         queue.write_texture(
@@ -519,6 +520,7 @@ pub fn create_depth_view(
                 texture: &wgpu_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::default(),
             },
             rgba_image,
             wgpu::ImageDataLayout {

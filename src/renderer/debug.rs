@@ -17,7 +17,7 @@ impl DebugDrawer {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -43,13 +43,11 @@ impl DebugDrawer {
             });
             let vs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("line.vert"),
-                source:wgpu::util::make_spirv(&fs::read("src/shader/spv/line.vert.spv").unwrap()),
-                flags: wgpu::ShaderFlags::EXPERIMENTAL_TRANSLATION,
+                source: wgpu::util::make_spirv(&fs::read("src/shader/spv/line.vert.spv").unwrap()),
             });
             let fs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: Some("line.frag"),
-                source:wgpu::util::make_spirv(&fs::read("src/shader/spv/line.frag.spv").unwrap()),
-                flags: wgpu::ShaderFlags::EXPERIMENTAL_TRANSLATION,
+                source: wgpu::util::make_spirv(&fs::read("src/shader/spv/line.frag.spv").unwrap()),
             });
             render::build_render_pipeline(device, &layout, vs_module, fs_module, SimpleVertex::desc(), wgpu::PrimitiveTopology::LineList)
         };
@@ -63,7 +61,7 @@ impl DebugDrawer {
                     position: [5.3, 5.3, 5.3],
                 },
             ]),
-            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
         DebugDrawer {
             render_pipeline: debug_render_pipeline,

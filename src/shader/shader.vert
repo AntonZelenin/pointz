@@ -18,7 +18,7 @@ uniform Uniforms {
 };
 
 layout(set=0, binding=1)
-buffer Instances {
+buffer readonly Instances {
     mat4 s_models[];
 };
 

@@ -42,7 +42,7 @@ pub struct App {
 impl App {
     pub fn run() {
         let event_loop = EventLoop::new();
-        let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+        let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
         let window = {
             let mut builder = WindowBuilder::new();
             builder = builder.with_title("scene-viewer");
@@ -55,7 +55,7 @@ impl App {
             window.inner_size(),
             window.scale_factor(),
         );
-        let camera_state = CameraState::new(rendering.sc_desc.width, rendering.sc_desc.height);
+        let camera_state = CameraState::new(rendering.surface_config.width, rendering.surface_config.height);
         let mut app = App {
             window,
             rendering,
@@ -150,18 +150,15 @@ impl App {
         self.camera_state
             .projection
             .resize(new_size.width, new_size.height);
-        self.rendering.sc_desc.width = new_size.width;
-        self.rendering.sc_desc.height = new_size.height;
-        let depth_texture = Texture::create_depth_texture(&self.rendering.sc_desc, "depth_texture");
+        self.rendering.surface_config.width = new_size.width;
+        self.rendering.surface_config.height = new_size.height;
+        let depth_texture = Texture::create_depth_texture(&self.rendering.surface_config, "depth_texture");
         self.rendering.depth_texture_view = renderer::model::create_depth_view(
             &depth_texture,
             &self.rendering.device,
             &self.rendering.queue,
         );
-        self.rendering.swap_chain = self
-            .rendering
-            .device
-            .create_swap_chain(&self.rendering.surface, &self.rendering.sc_desc);
+        self.rendering.surface.configure(&self.rendering.device, &self.rendering.surface_config);
     }
 
     pub fn update(&mut self, dt: std::time::Duration) {
@@ -231,10 +228,10 @@ impl App {
     fn get_normalized_click_coords(&self) -> Vector4<f32> {
         Vector4::new(
             (2.0 * self.rendering.gui.cursor_position.x as f32)
-                / self.rendering.sc_desc.width as f32
+                / self.rendering.surface_config.width as f32
                 - 1.0,
             1.0 - (2.0 * self.rendering.gui.cursor_position.y as f32)
-                / self.rendering.sc_desc.height as f32,
+                / self.rendering.surface_config.height as f32,
             0.0,
             1.0,
         )

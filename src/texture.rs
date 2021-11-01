@@ -49,7 +49,7 @@ impl Texture {
         Self::from_image(&img, label, is_normal_map)
     }
 
-    pub fn create_depth_texture(sc_desc: &wgpu::SwapChainDescriptor, label: &str) -> Self {
+    pub fn create_depth_texture(sc_desc: &wgpu::SurfaceConfiguration, label: &str) -> Self {
         Texture {
             label: label.to_string(),
             dimensions: (sc_desc.width, sc_desc.height),
