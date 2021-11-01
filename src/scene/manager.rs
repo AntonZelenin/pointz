@@ -1,6 +1,5 @@
 use crate::model::Model;
 use crate::app::IndexDriver;
-use legion::Entity;
 use std::collections::HashMap;
 use cgmath::{Matrix4, Vector3, Quaternion};
 
@@ -16,8 +15,7 @@ pub struct Object {
     pub(crate) id: usize,
     pub model_id: usize,
     pub instance_id: usize,
-    pub transform: Transform,
-    entities: Vec<Entity>,
+    pub transform: Transform
 }
 
 impl Object {
@@ -89,7 +87,6 @@ impl Manager {
             model_id,
             instance_id,
             transform,
-            entities: vec![],
         };
         self.object_registry.insert(object.id, object);
         self.model_instances.get_mut(&model_id).unwrap().push(id);
@@ -105,9 +102,5 @@ impl Manager {
         ids.iter().map(|id| {
             self.object_registry.get(id).unwrap()
         }).collect()
-    }
-
-    pub fn get_objects(&mut self) -> &mut HashMap<usize, Object> {
-        &mut self.object_registry
     }
 }

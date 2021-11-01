@@ -1,13 +1,12 @@
 [package]
 name = "pointz"
-version = "0.2.0"
+version = "0.1.1"
 authors = ["Anton Zelenin <ntnzelenin@gmail.com>"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-physics = { path = "physics", version = "0.1.0" }
 iced = {path = '../../other_repos/iced', default_features = false, features = ["wgpu"] }
 iced_winit = {path = '../../other_repos/iced/winit'}
 iced_wgpu = {path = '../../other_repos/iced/wgpu'}
@@ -18,6 +17,5 @@ image = "0.23.14"
 log = "0.4.14"
 tobj = "2.0.3"
 anyhow = "1.0.44"
-legion = "0.4.0"
-glam = "0.13.0"
-ordered-float = "2.1.1"
+glam = "0.20.0"
+ordered-float = "2.8"
