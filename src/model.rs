@@ -1,3 +1,4 @@
+use std::mem;
 use std::path::Path;
 use anyhow::*;
 use cgmath::{Vector2, Vector3, Zero};
@@ -26,11 +27,9 @@ impl Vertex for SimpleVertex {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<SimpleVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::InputStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                offset: 0,
-                shader_location: 0,
-                format: wgpu::VertexFormat::Float32x3,
-            }],
+            attributes: &wgpu::vertex_attr_array!(
+                0 => Float32x3,
+            ),
         }
     }
 }
@@ -97,7 +96,6 @@ impl Default for ModelVertex {
 
 impl Vertex for ModelVertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        use std::mem;
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<ModelVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::InputStepMode::Vertex,
