@@ -263,9 +263,10 @@ pub fn build_render_pipeline(
     fs_module: wgpu::ShaderModule,
     vertex_buffer_layout: wgpu::VertexBufferLayout,
     topology: wgpu::PrimitiveTopology,
+    label: &str,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("main"),
+        label: Some(label),
         layout: Some(render_pipeline_layout),
         vertex: wgpu::VertexState {
             module: &vs_module,

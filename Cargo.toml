@@ -7,16 +7,19 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-iced = {path = '../../other_repos/iced', default_features = false, features = ["wgpu"] }
-iced_winit = {path = '../../other_repos/iced/winit'}
-iced_wgpu = {path = '../../other_repos/iced/wgpu'}
+# use commit 378a13555d47c77dd1c43742ec2b2a7ae5190286 of iced repo
+# todo why do you need two wgpus?
+iced = {path = '../iced', default_features = false, features = ["wgpu"] }
+iced_winit = {path = '../iced/winit'}
+iced_wgpu = {path = '../iced/wgpu'}
 wgpu = { version = "0.11", features = ["spirv"] }
 cgmath = "0.18"
-bytemuck = "1.7.2"
-shaderc = "0.7.3"
-image = "0.23.14"
-log = "0.4.14"
+bytemuck = "1.9.1"
+shaderc = "0.7.4"
+image = "0.24.1"
+log = "0.4.16"
 tobj = "2.0.3"
-anyhow = "1.0.44"
-glam = "0.20.0"
-ordered-float = "2.8"
+anyhow = "1.0.56"
+glam = "0.20.3"
+ordered-float = "2.10.0"
+core-foundation = "0.9.3"

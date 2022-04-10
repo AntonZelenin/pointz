@@ -41,7 +41,7 @@ impl ModelDrawer {
                         &texture_bind_group_layout,
                         &light_bind_group_layout,
                     ],
-                    label: Some("main"),
+                    label: Some("model_drawer"),
                     push_constant_ranges: &[],
                 });
             let vs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
@@ -52,7 +52,15 @@ impl ModelDrawer {
                 label: Some("shader.frag"),
                 source: wgpu::util::make_spirv(&fs::read("src/shader/spv/shader.frag.spv").unwrap()),
             });
-            render::build_render_pipeline(&device, &render_pipeline_layout, vs_module, fs_module, ModelVertex::desc(), primitive_topology)
+            render::build_render_pipeline(
+                &device,
+                &render_pipeline_layout,
+                vs_module,
+                fs_module,
+                ModelVertex::desc(),
+                primitive_topology,
+                "model_render_pipeline",
+            )
         };
         let light = Light::new((2.0, 2.0, 2.0).into(), (1.0, 1.0, 1.0).into());
         // We'll want to update our lights position, so we use COPY_DST
@@ -273,9 +281,10 @@ impl ModelDrawer {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            // it had filtering, but there was an error non-filterable float texture so I disabled it
+            // mag_filter: wgpu::FilterMode::Linear,
+            // min_filter: wgpu::FilterMode::Nearest,
+            // mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         })
     }
@@ -325,8 +334,6 @@ impl ModelDrawer {
                     binding: 1,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
-                        // todo maybe error related to read_only
-                        // todo what if I migrate to 0.11?
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
@@ -356,7 +363,8 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler {
                         comparison: false,
-                        filtering: true,
+                        // filtering: true,
+                        filtering: false,
                     },
                     count: None,
                 },
@@ -376,7 +384,8 @@ impl ModelDrawer {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler {
                         comparison: false,
-                        filtering: true,
+                        // filtering: true,
+                        filtering: false,
                     },
                     count: None,
                 },

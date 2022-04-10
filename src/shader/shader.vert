@@ -33,7 +33,10 @@ void main() {
     v_tex_coords = a_tex_coords;
 
     mat4 model_matrix = s_models[gl_InstanceIndex];
-    mat3 normal_matrix = mat3(transpose(inverse(model_matrix)));
+    // it used to be inverse for some reason, but I don't know why, check learn-wgpu tutorials
+    // it doesn't work at least on mac and it's very slow to invert on gpu, do it on cpu if it's really needed
+//    mat3 normal_matrix = mat3(transpose(inverse(model_matrix)));
+    mat3 normal_matrix = mat3(transpose(model_matrix));
 
     vec3 normal = normalize(normal_matrix * a_normal);
     vec3 tangent = normalize(normal_matrix * a_tangent);
