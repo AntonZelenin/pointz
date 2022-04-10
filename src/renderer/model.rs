@@ -362,9 +362,8 @@ impl ModelDrawer {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler {
-                        comparison: false,
-                        // filtering: true,
-                        filtering: false,
+                        // todo why 0?
+                        0: wgpu::SamplerBindingType::NonFiltering,
                     },
                     count: None,
                 },
@@ -383,9 +382,7 @@ impl ModelDrawer {
                     binding: 3,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler {
-                        comparison: false,
-                        // filtering: true,
-                        filtering: false,
+                        0: wgpu::SamplerBindingType::NonFiltering,
                     },
                     count: None,
                 },

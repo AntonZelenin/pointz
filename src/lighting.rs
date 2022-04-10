@@ -5,6 +5,8 @@ pub struct Light {
     // Due to uniforms requiring 16 byte (4 float) spacing, we need to use a padding field here
     _padding: u32,
     color: cgmath::Vector3<f32>,
+    // Due to uniforms requiring 16 byte (4 float) spacing, we need to use a padding field here
+    _padding2: u32,
 }
 
 unsafe impl bytemuck::Zeroable for Light {}
@@ -16,6 +18,7 @@ impl Light {
             position,
             _padding: 0,
             color,
+            _padding2: 0,
         }
     }
 }
