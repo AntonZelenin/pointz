@@ -235,19 +235,21 @@ impl RenderingState {
         }
 
         let mut staging_belt = wgpu::util::StagingBelt::new(5 * 1024);
-        let mouse_interaction = self.gui.renderer.backend_mut().draw(
-            &mut self.device,
-            &mut staging_belt,
-            &mut encoder,
-            view,
-            &self.viewport,
-            self.gui.program_state.primitive(),
-            &self.gui.debug.overlay(),
-        );
+        self.gui.renderer.with_primitives(|backend, primitive| {
+            backend.present(
+                &mut self.device,
+                &mut staging_belt,
+                &mut encoder,
+                view,
+                primitive,
+                &self.viewport,
+                &self.gui.debug.overlay(),
+            )
+        });
         staging_belt.finish();
 
         // todo event to remove window from here?
-        window.set_cursor_icon(iced_winit::conversion::mouse_interaction(mouse_interaction));
+        window.set_cursor_icon(iced_winit::conversion::mouse_interaction(self.gui.program_state.mouse_interaction()));
         self.queue.submit(iter::once(encoder.finish()));
         frame.present();
     }

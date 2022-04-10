@@ -979,6 +979,7 @@ version = "0.4.0"
 dependencies = [
  "iced_core",
  "iced_futures",
+ "iced_style",
  "num-traits",
  "twox-hash",
  "unicode-segmentation",

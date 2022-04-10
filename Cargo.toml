@@ -7,7 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# use commit 378a13555d47c77dd1c43742ec2b2a7ae5190286 of iced repo
+# use commit bc15bfdb67394eb6eaaacec96d919f0f6cfe4efb of iced repo
 iced = {path = '../iced', default_features = false, features = ["wgpu"] }
 iced_winit = {path = '../iced/winit'}
 iced_wgpu = {path = '../iced/wgpu', features = ["spirv"]}

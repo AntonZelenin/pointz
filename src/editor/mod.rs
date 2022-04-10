@@ -1,7 +1,8 @@
-use iced_winit::{button, Alignment, Button, Color, Column, Command, Element, Length, Program, Row, Text, program, conversion, winit, Debug, Size};
+use iced_winit::{Alignment, Color, Command, Element, Length, Program, program, conversion, winit, Debug, Size};
 use crate::widgets::fps;
 use iced_winit::winit::dpi::PhysicalPosition;
 use iced_wgpu::{Backend, Renderer, Settings, wgpu};
+use iced_winit::widget::{button, Button, Column, Row, Text};
 use winit::dpi::PhysicalSize;
 
 pub struct GUI {
@@ -21,7 +22,7 @@ impl GUI {
         let program_state = program::State::new(
             GUIState::new(),
             Size::new(size.width as f32, size.height as f32),
-            conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), scale_factor),
+            // conversion::cursor_position(PhysicalPosition::new(-1.0, -1.0), scale_factor),
             &mut renderer,
             &mut debug,
         );
