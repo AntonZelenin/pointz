@@ -8,11 +8,9 @@ edition = "2021"
 
 [dependencies]
 # use commit 378a13555d47c77dd1c43742ec2b2a7ae5190286 of iced repo
-# todo why do you need two wgpus?
 iced = {path = '../iced', default_features = false, features = ["wgpu"] }
 iced_winit = {path = '../iced/winit'}
-iced_wgpu = {path = '../iced/wgpu'}
-wgpu = { version = "0.11", features = ["spirv"] }
+iced_wgpu = {path = '../iced/wgpu', features = ["spirv"]}
 cgmath = "0.18"
 bytemuck = "1.9.1"
 shaderc = "0.7.4"

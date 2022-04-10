@@ -1,8 +1,8 @@
 use std::fs;
 use crate::renderer::render::Drawer;
 use crate::model::{SimpleVertex, Vertex};
-use wgpu;
-use wgpu::util::DeviceExt;
+use iced_wgpu::wgpu;
+use iced_wgpu::wgpu::util::DeviceExt;
 use crate::renderer::render;
 
 pub struct DebugDrawer {

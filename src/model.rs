@@ -2,7 +2,7 @@ use std::mem;
 use std::path::Path;
 use anyhow::*;
 use cgmath::{Vector2, Vector3, Zero};
-use wgpu;
+use iced_wgpu::wgpu;
 use crate::app::IndexDriver;
 use crate::texture;
 

@@ -6,7 +6,7 @@ use crate::{renderer, editor, event, model, scene};
 use crate::scene::manager::{Manager, NUM_ROWS, NUM_INSTANCES_PER_ROW, INSTANCE_DISPLACEMENT};
 use cgmath::prelude::*;
 use cgmath::{Deg, Quaternion, Vector3, Vector4};
-use wgpu;
+use iced_wgpu::wgpu;
 use iced_winit::winit::event_loop::EventLoop;
 use iced_winit::winit::window::{Window, WindowBuilder};
 use ordered_float::OrderedFloat;
