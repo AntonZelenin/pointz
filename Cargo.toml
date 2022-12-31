@@ -7,16 +7,16 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-iced = {version = "0.5.0", default_features = false, features = ["wgpu"] }
-iced_winit = {version = "0.5"}
-iced_wgpu = {version = "0.6", features = ["spirv"]}
+iced = {version = "0.6.0", default_features = false, features = ["wgpu"] }
+iced_winit = {version = "0.6.0" }
+iced_wgpu = {version = "0.7.0", features = ["spirv"]}
 cgmath = "0.18"
 bytemuck = "1.9.1"
-shaderc = "0.7.4"
+shaderc = "0.8.1"
 image = "0.24.1"
 log = "0.4.16"
 tobj = "2.0.3"
 anyhow = "1.0.56"
-glam = "0.20.3"
-ordered-float = "2.10.0"
+glam = "0.22.0"
+ordered-float = "3.4.0"
 core-foundation = "0.9.3"
