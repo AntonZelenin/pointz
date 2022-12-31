@@ -13,6 +13,7 @@ use iced_winit::winit::dpi::PhysicalSize;
 use iced_winit::winit::window::Window;
 use std::iter;
 use std::time::Instant;
+use iced_wgpu::wgpu::CompositeAlphaMode;
 // todo wgpu must be only inside the renderer, but that's not for sure
 
 pub trait Drawer {
@@ -66,8 +67,8 @@ impl RenderingState {
 
             (
                 surface
-                    .get_preferred_format(&adapter)
-                    .expect("Get preferred format"),
+                    .get_supported_formats(&adapter)[0],
+                    // .expect("Get preferred format"),
                 adapter
                     .request_device(
                         &wgpu::DeviceDescriptor {
@@ -87,6 +88,7 @@ impl RenderingState {
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: CompositeAlphaMode::Auto,
         };
         surface.configure(&device, &surface_config);
         let depth_texture = Texture::create_depth_texture(&surface_config, "depth_texture");
@@ -194,7 +196,7 @@ impl RenderingState {
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -214,7 +216,7 @@ impl RenderingState {
                         },
                         store: true,
                     },
-                }],
+                })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture_view,
                     depth_ops: Some(wgpu::Operations {
@@ -279,14 +281,14 @@ pub fn build_render_pipeline(
         fragment: Some(wgpu::FragmentState {
             module: &fs_module,
             entry_point: "main",
-            targets: &[wgpu::ColorTargetState {
+            targets: &[Some(wgpu::ColorTargetState {
                 format: wgpu::TextureFormat::Bgra8UnormSrgb,
                 blend: Some(wgpu::BlendState {
                     color: wgpu::BlendComponent::REPLACE,
                     alpha: wgpu::BlendComponent::REPLACE,
                 }),
                 write_mask: wgpu::ColorWrites::ALL,
-            }],
+            })],
         }),
         primitive: wgpu::PrimitiveState {
             topology,

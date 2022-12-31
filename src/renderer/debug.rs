@@ -41,11 +41,11 @@ impl DebugDrawer {
                 bind_group_layouts: &[&debug_uniform_bind_group_layout],
                 push_constant_ranges: &[],
             });
-            let vs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("line.vert"),
                 source: wgpu::util::make_spirv(&fs::read("src/shader/spv/line.vert.spv").unwrap()),
             });
-            let fs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("line.frag"),
                 source: wgpu::util::make_spirv(&fs::read("src/shader/spv/line.frag.spv").unwrap()),
             });

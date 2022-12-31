@@ -44,11 +44,11 @@ impl ModelDrawer {
                     label: Some("model_drawer"),
                     push_constant_ranges: &[],
                 });
-            let vs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("shader.vert"),
                 source: wgpu::util::make_spirv(&fs::read("src/shader/spv/shader.vert.spv").unwrap()),
             });
-            let fs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("shader.frag"),
                 source: wgpu::util::make_spirv(&fs::read("src/shader/spv/shader.frag.spv").unwrap()),
             });

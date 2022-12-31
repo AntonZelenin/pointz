@@ -1,9 +1,10 @@
 use crate::app::App;
+use iced::theme::{self, Theme};
 use iced_winit::winit::event::{
     DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, MouseButton, WindowEvent,
 };
 use iced_winit::winit::event_loop::ControlFlow;
-use iced_winit::{Clipboard, conversion, Size};
+use iced_winit::{Clipboard, conversion, renderer, Size};
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
@@ -85,6 +86,8 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                         app.rendering.viewport.scale_factor(),
                     ),
                     &mut app.rendering.gui.renderer,
+                    &Theme::default(),
+                    &renderer::Style::default(),
                     &mut Clipboard::connect(&app.window),
                     &mut app.rendering.gui.debug,
                 );
