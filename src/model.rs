@@ -3,6 +3,7 @@ use std::path::Path;
 use anyhow::*;
 use cgmath::{Vector2, Vector3, Zero};
 use iced_wgpu::wgpu;
+use tobj::LoadOptions;
 use crate::app::IndexDriver;
 use crate::texture;
 
@@ -142,13 +143,21 @@ impl Loader {
     }
 
     pub fn load<P: AsRef<Path>>(&mut self, path: P) -> Result<Model> {
-        let (obj_models, obj_materials) = tobj::load_obj(path.as_ref(), true)?;
+        let (obj_models, obj_materials) = tobj::load_obj(
+            path.as_ref(),
+            &LoadOptions{
+                single_index: false,
+                triangulate: true,
+                ignore_points: false,
+                ignore_lines: false,
+            },
+        )?;
 
         // We're assuming that the texture files are stored with the obj file
         let containing_folder = path.as_ref().parent().unwrap();
 
         let mut materials = Vec::new();
-        for mat in obj_materials {
+        for mat in obj_materials.unwrap() {
             let diffuse_path = mat.diffuse_texture;
             let diffuse_texture =
                 texture::Texture::load(containing_folder.join(diffuse_path), false)?;
@@ -262,13 +271,16 @@ impl Loader {
     }
 
     pub fn load_primitive<P: AsRef<Path>>(&mut self, path: P) -> Result<Model> {
-        let (obj_models, obj_materials) = tobj::load_obj(path.as_ref(), true)?;
+        let (obj_models, obj_materials) = tobj::load_obj(
+            path.as_ref(),
+            &LoadOptions::default(),
+        )?;
 
         // We're assuming that the texture files are stored with the obj file
         let containing_folder = path.as_ref().parent().unwrap();
 
         let mut materials = Vec::new();
-        for mat in obj_materials {
+        for mat in obj_materials.unwrap() {
             let diffuse_path = mat.diffuse_texture;
             let diffuse_texture =
                 texture::Texture::load(containing_folder.join(diffuse_path), false)?;
