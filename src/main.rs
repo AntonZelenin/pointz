@@ -16,6 +16,7 @@ mod widgets;
 
 // todo move processing of all input events into one module
 // todo you can load models in parallel, check learn-wgpu
+// todo move to glam
 pub fn main() {
     // todo define a ROOT const
     shader::compile_shaders("src/shader");

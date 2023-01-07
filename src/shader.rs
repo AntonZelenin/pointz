@@ -33,7 +33,7 @@ fn compile_shader(file_path: &Path) {
         file_path.file_name().and_then(OsStr::to_str).unwrap()
     );
     let shader_type = get_shader_king(file_path.extension().and_then(OsStr::to_str).unwrap());
-    let mut compiler = shaderc::Compiler::new().unwrap();
+    let compiler = shaderc::Compiler::new().unwrap();
     let mut options = shaderc::CompileOptions::new().unwrap();
     options.add_macro_definition("EP", Some("main"));
     let source = fs::read_to_string(file_path).expect("file doesn't exist");

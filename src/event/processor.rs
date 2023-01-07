@@ -1,10 +1,19 @@
 use crate::app::App;
-use iced::theme::{self, Theme};
+
+use iced::theme::Theme;
 use iced_winit::winit::event::{
-    DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, MouseButton, WindowEvent,
+    DeviceEvent,
+    ElementState,
+    Event,
+    KeyboardInput,
+    ModifiersState,
+    MouseButton,
+    WindowEvent,
 };
 use iced_winit::winit::event_loop::ControlFlow;
 use iced_winit::{Clipboard, conversion, renderer, Size};
+
+use std::env;
 
 const KEEP_CURSOR_POS_FOR_NUM_FRAMES: usize = 3;
 
@@ -48,11 +57,14 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                 }
                 WindowEvent::CursorMoved { position, .. } => {
                     if app.camera_state.camera_mode {
-                        // make cursor stay at the same place
-                        // todo seems you need to subtract cursor delta on mac when calling this
-                        // app.window
-                        //     .set_cursor_position(app.rendering.gui.cursor_position)
-                        //     .unwrap();
+                        // this is a temporary solution, mac adds delta to the next event
+                        // when calling set_cursor_position
+                        if env::consts::OS != "macos" {
+                            // make cursor stay at the same place on camera movement
+                            app.window
+                                .set_cursor_position(app.rendering.gui.cursor_position)
+                                .unwrap();
+                        }
                     } else {
                         app.rendering.gui.cursor_position = *position;
                     }
@@ -73,7 +85,7 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                 _ => {}
             }
             if let Some(event) =
-                iced_winit::conversion::window_event(&event, app.window.scale_factor(), modifiers)
+                conversion::window_event(&event, app.window.scale_factor(), modifiers)
             {
                 app.rendering.gui.program_state.queue_event(event);
             }

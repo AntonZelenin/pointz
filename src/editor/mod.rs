@@ -1,6 +1,6 @@
 use crate::widgets::fps;
 
-use iced::alignment::{self, Alignment};
+use iced::alignment;
 use iced_wgpu::{Backend, Renderer, Settings, wgpu};
 use iced::widget::{button, column, horizontal_space, vertical_space, row, text};
 use iced_winit::{Color, Command, Element, Length, Program, program, winit, Debug, Size};
