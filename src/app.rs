@@ -191,6 +191,17 @@ impl App {
             ));
     }
 
+    pub fn process_mouse_move(&mut self, delta: &(f64, f64)) {
+        self.rendering
+            .gui
+            .program_state
+            .queue_message(editor::Message::DebugInfo(format!(
+                "mouse dx {}, dy {}",
+                delta.0,
+                delta.1,
+            )));
+    }
+
     pub fn process_left_click(&mut self) {
         let nd_click_coords = self.get_normalized_click_coords();
         let mut start = self.rendering.uniforms.view_proj.invert().unwrap() * nd_click_coords;

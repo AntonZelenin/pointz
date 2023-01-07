@@ -49,9 +49,10 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                 WindowEvent::CursorMoved { position, .. } => {
                     if app.camera_state.camera_mode {
                         // make cursor stay at the same place
-                        app.window
-                            .set_cursor_position(app.rendering.gui.cursor_position)
-                            .unwrap();
+                        // todo seems you need to subtract cursor delta on mac when calling this
+                        // app.window
+                        //     .set_cursor_position(app.rendering.gui.cursor_position)
+                        //     .unwrap();
                     } else {
                         app.rendering.gui.cursor_position = *position;
                     }
@@ -108,7 +109,7 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
         }
         Event::DeviceEvent { event, .. } => match event {
             DeviceEvent::MouseMotion { delta } => {
-                // todo too long, seems will move to a method or sort of
+                app.process_mouse_move(delta);
                 if app
                     .camera_state
                     .cursor_watcher
@@ -125,8 +126,8 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                     .cursor_watcher
                     .last_frames_cursor_deltas
                     .push(*delta);
-                let (mouse_dx, mouse_dy) = app.camera_state.cursor_watcher.get_avg_cursor_pos();
                 if app.camera_state.camera_mode {
+                    let (mouse_dx, mouse_dy) = app.camera_state.cursor_watcher.get_avg_cursor_pos();
                     app.camera_state
                         .camera_controller
                         .process_mouse(mouse_dx / 2.0, mouse_dy / 2.0);

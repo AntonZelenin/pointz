@@ -146,7 +146,7 @@ impl Loader {
         let (obj_models, obj_materials) = tobj::load_obj(
             path.as_ref(),
             &LoadOptions{
-                single_index: false,
+                single_index: true,
                 triangulate: true,
                 ignore_points: false,
                 ignore_lines: false,
