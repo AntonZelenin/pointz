@@ -1,8 +1,10 @@
-use iced_winit::{Alignment, Color, Command, Element, Length, Program, program, winit, Debug, Size};
 use crate::widgets::fps;
-use iced_winit::winit::dpi::PhysicalPosition;
+
+use iced::alignment::{self, Alignment};
 use iced_wgpu::{Backend, Renderer, Settings, wgpu};
-use iced::widget::{button, column, Button, Column, Row, Text};
+use iced::widget::{button, column, horizontal_space, vertical_space, row, text};
+use iced_winit::{Color, Command, Element, Length, Program, program, winit, Debug, Size};
+use iced_winit::winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
 
 pub struct GUI {
@@ -17,7 +19,7 @@ pub struct GUI {
 
 impl GUI {
     pub fn new(device: &wgpu::Device, scale_factor: f64, size: PhysicalSize<u32>, texture_format: wgpu::TextureFormat) -> GUI {
-        let mut renderer = iced_wgpu::Renderer::new(Backend::new(device, Settings::default(), texture_format));
+        let mut renderer = Renderer::new(Backend::new(device, Settings::default(), texture_format));
         let mut debug = Debug::new();
         let program_state = program::State::new(
             GUIState::new(),
@@ -89,43 +91,23 @@ impl Program for GUIState {
     }
 
     fn view(&self) -> Element<Message, Renderer> {
-        // Row::new()
-        //     .width(Length::Fill)
-        //     .height(Length::Fill)
-        //     .align_items(Alignment::End)
-        //     .push(
-        //         Column::new()
-        //             .width(Length::Shrink)
-        //             .align_items(Alignment::Start)
-        //             .push(
-        //                 Text::new(self.fps.to_string())
-        //                     .size(30)
-        //                     .color([0.8, 0.8, 0.8]),
-        //             )
-        //             .push(
-        //                 Text::new(format!("{}", self.debug_info))
-        //                     .size(20)
-        //                     .color([0.8, 0.8, 0.8]),
-        //             ),
-        //     )
-        //     .push(
-        //         Column::new()
-        //             .width(Length::Fill)
-        //             .align_items(Alignment::End)
-        //             .push(
-        //                 Column::new().padding(10).spacing(10).push(
-        //                     Button::new(&mut self.buttons[0], Text::new("Change background"))
-        //                         .on_press(Message::ChangeBackgroundColor),
-        //                 ),
-        //             ),
-        //     )
-        //     .into();
-
-            column![
-                button("Change background").on_press(Message::ChangeBackgroundColor)
+        column![
+            row![
+                // text("1").style(Color::from([1.0, 1.0, 1.0])),
+                horizontal_space(Length::Fill),
+                text(self.fps.to_string()).style(Color::from([1.0, 1.0, 1.0])),
+            ],
+            vertical_space(Length::Fill),
+            row![
+                text(self.debug_info.clone())
+                    .style(Color::from([1.0, 1.0, 1.0]))
+                    .vertical_alignment(alignment::Vertical::Center),
+                horizontal_space(Length::Fill),
+                button("Change background").on_press(Message::ChangeBackgroundColor),
             ]
-                .width(Length::Shrink)
-                .align_items(Alignment::Start)
-                .into()
+        ]
+            .width(Length::Fill)
+            .padding(5)
+            .into()
     }
 }
