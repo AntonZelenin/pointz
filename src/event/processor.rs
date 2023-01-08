@@ -57,17 +57,24 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                 }
                 WindowEvent::CursorMoved { position, .. } => {
                     if app.camera_state.camera_mode {
+                        app.camera_state.cursor_watcher.cursor_delta = (
+                            position.x - app.camera_state.cursor_watcher.last_cursor_position.0,
+                            position.y - app.camera_state.cursor_watcher.last_cursor_position.1,
+                        );
                         // this is a temporary solution, mac adds delta to the next event
                         // when calling set_cursor_position
-                        if env::consts::OS != "macos" {
+                        // if env::consts::OS != "macos" {
                             // make cursor stay at the same place on camera movement
                             app.window
                                 .set_cursor_position(app.rendering.gui.cursor_position)
                                 .unwrap();
-                        }
+                        // }
                     } else {
                         app.rendering.gui.cursor_position = *position;
                     }
+                    app.camera_state.cursor_watcher.pre_last_cursor_position
+                        = app.camera_state.cursor_watcher.last_cursor_position;
+                    app.camera_state.cursor_watcher.last_cursor_position = (position.x, position.y);
                 }
                 WindowEvent::ModifiersChanged(new_modifiers) => {
                     modifiers = *new_modifiers;

@@ -204,12 +204,18 @@ impl CameraState {
 
 pub struct CursorWatcher {
     pub last_frames_cursor_deltas: Vec<(f64, f64)>,
+    pub last_cursor_position: (f64, f64),
+    pub pre_last_cursor_position: (f64, f64),
+    pub cursor_delta: (f64, f64),
 }
 
 impl CursorWatcher {
     pub fn new() -> CursorWatcher {
         CursorWatcher {
             last_frames_cursor_deltas: Vec::with_capacity(5),
+            last_cursor_position: (0.0, 0.0),
+            pre_last_cursor_position: (0.0, 0.0),
+            cursor_delta: (0.0, 0.0),
         }
     }
 
