@@ -11,7 +11,7 @@ use iced_winit::winit::event::{
     WindowEvent,
 };
 use iced_winit::winit::event_loop::ControlFlow;
-use iced_winit::{Clipboard, conversion, renderer, Size};
+use iced_winit::{Clipboard, conversion, renderer};
 
 use std::env;
 
@@ -72,11 +72,7 @@ pub fn process_events(app: &mut App, event: &Event<()>, control_flow: &mut Contr
                 WindowEvent::ModifiersChanged(new_modifiers) => {
                     modifiers = *new_modifiers;
                 }
-                WindowEvent::Resized(new_size) => {
-                    app.rendering.viewport = iced_wgpu::Viewport::with_physical_size(
-                        Size::new(new_size.width, new_size.height),
-                        app.window.scale_factor(),
-                    );
+                WindowEvent::Resized(_) => {
                     app.resized = true;
                 }
                 WindowEvent::CloseRequested => {

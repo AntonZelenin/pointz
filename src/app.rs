@@ -150,6 +150,10 @@ impl App {
         self.camera_state
             .projection
             .resize(new_size.width, new_size.height);
+        self.rendering.viewport = iced_wgpu::Viewport::with_physical_size(
+            iced_winit::Size::new(new_size.width, new_size.height),
+            self.window.scale_factor(),
+        );
         self.rendering.surface_config.width = new_size.width;
         self.rendering.surface_config.height = new_size.height;
         let depth_texture = Texture::create_depth_texture(&self.rendering.surface_config, "depth_texture");
